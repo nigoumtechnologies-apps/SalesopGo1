@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>SalesOps - Ayyappan Agency</title>
+<style>
+  :root {
+    --primary: #1e40af;
+    --primary-dark: #1e3a8a;
+    --stock: #64748b;
+    --booking: #d97706;
+    --finance: #7c3aed;
+    --insurance: #0891b2;
+    --rto: #ca8a04;
+    --delivered: #16a34a;
+    --returned: #dc2626;
+    --pending: #f59e0b;
+    --done: #22c55e;
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --text: #1e293b;
+    --text-light: #64748b;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    margin: 0;
+    color: var(--text);
+    padding-bottom: 70px;
+  }
+  .screen { display: none; padding: 12px; max-width: 600px; margin: 0 auto; }
+  .screen.active { display: block; }
+
+  /* ===== TOP BAR ===== */
+  .topbar {
+    background: var(--primary);
+    color: #fff;
+    padding: 14px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  .topbar .user-info { font-size: 11px; opacity: 0.85; }
+  .logout-btn { background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; }
+
+  /* ===== LOGIN SCREEN ===== */
+  #loginScreen.active { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+  .login-card { background: var(--card); border-radius: 14px; padding: 28px 24px; width: 100%; max-width: 360px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+  .login-card h2 { text-align: center; margin: 0 0 4px; color: var(--primary); font-size: 22px; }
+  .login-card .tagline { text-align: center; color: var(--text-light); font-size: 12px; margin-bottom: 24px; }
+  .login-card input {
+    width: 100%; padding: 13px; margin-bottom: 12px; border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: 16px;
+  }
+  .login-card input:focus { outline: none; border-color: var(--primary); }
+  .login-card button { width: 100%; padding: 14px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; margin-top: 6px; }
+  .login-error { color: var(--returned); font-size: 13px; text-align: center; margin-top: 10px; display: none; }
+
+  /* ===== BOTTOM NAV ===== */
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0; background: #fff;
+    border-top: 1px solid var(--border); display: flex; z-index: 100;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+  }
+  .nav-btn {
+    flex: 1; padding: 10px 4px 8px; text-align: center; background: none; border: none;
+    color: var(--text-light); font-size: 10px; display: flex; flex-direction: column;
+    align-items: center; gap: 3px;
+  }
+  .nav-btn .icon { font-size: 20px; }
+  .nav-btn.active { color: var(--primary); font-weight: 700; }
+
+  /* ===== DASHBOARD ===== */
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .stat-card { background: var(--card); border-radius: 12px; padding: 14px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .stat-card .num { font-size: 26px; font-weight: 800; }
+  .stat-card .label { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+  .stat-card.stock .num { color: var(--stock); }
+  .stat-card.booking .num { color: var(--booking); }
+  .stat-card.delivered .num { color: var(--delivered); }
+  .stat-card.returned .num { color: var(--returned); }
+  .pending-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .pending-chip { flex: 1; background: #fff; border-radius: 10px; padding: 10px; text-align: center; font-size: 11px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .pending-chip .n { font-size: 18px; font-weight: 800; display: block; }
+  .section-title { font-size: 14px; font-weight: 700; margin: 18px 0 10px; color: var(--text); }
+
+  /* ===== STOCK LIST ===== */
+  .search-bar { display: flex; gap: 8px; margin-bottom: 10px; }
+  .search-bar input { flex: 1; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; }
+  .filter-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; }
+  .filter-chip { flex-shrink: 0; padding: 7px 14px; border-radius: 20px; background: #fff; border: 1.5px solid var(--border); font-size: 12px; font-weight: 600; color: var(--text-light); }
+  .filter-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+  .vehicle-card {
+    background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-left: 4px solid var(--stock);
+    cursor: pointer;
+  }
+  .vehicle-card.status-stock { border-left-color: var(--stock); }
+  .vehicle-card.status-booking { border-left-color: var(--booking); }
+  .vehicle-card.status-finance { border-left-color: var(--finance); }
+  .vehicle-card.status-insurance { border-left-color: var(--insurance); }
+  .vehicle-card.status-rto { border-left-color: var(--rto); }
+  .vehicle-card.status-delivered { border-left-color: var(--delivered); }
+  .vehicle-card.status-returned { border-left-color: var(--returned); }
+
+  .vc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+  .vc-vin { font-weight: 700; font-size: 14px; }
+  .vc-model { font-size: 12px; color: var(--text-light); }
+  .vc-status-badge { font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 12px; text-transform: uppercase; color: #fff; white-space: nowrap; }
+  .vc-status-badge.stock { background: var(--stock); }
+  .vc-status-badge.booking { background: var(--booking); }
+  .vc-status-badge.finance { background: var(--finance); }
+  .vc-status-badge.insurance { background: var(--insurance); }
+  .vc-status-badge.rto { background: var(--rto); }
+  .vc-status-badge.delivered { background: var(--delivered); }
+  .vc-status-badge.returned { background: var(--returned); }
+
+  .vc-sub-chips { display: flex; gap: 6px; margin-top: 8px; }
+  .sub-chip { font-size: 10px; padding: 4px 8px; border-radius: 6px; font-weight: 600; }
+  .sub-chip.na { background: #f1f5f9; color: var(--text-light); }
+  .sub-chip.pending { background: #fef3c7; color: #92400e; }
+  .sub-chip.done { background: #dcfce7; color: #166534; }
+  .sub-chip.rejected { background: #fee2e2; color: #991b1b; }
+
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 10px; }
+
+  /* ===== FAB ===== */
+  .fab {
+    position: fixed; bottom: 78px; right: 18px; width: 56px; height: 56px; border-radius: 50%;
+    background: var(--primary); color: #fff; border: none; font-size: 26px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    z-index: 90; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ===== MODAL / FORMS ===== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+    align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-sheet {
+    background: #fff; border-radius: 16px 16px 0 0; width: 100%; max-width: 600px;
+    max-height: 90vh; overflow-y: auto; padding: 18px 16px 24px;
+    animation: slideUp 0.2s ease-out;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .modal-header h3 { margin: 0; font-size: 16px; }
+  .modal-close { background: none; border: none; font-size: 22px; color: var(--text-light); padding: 0 4px; }
+
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 5px; color: var(--text-light); }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 11px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 15px; background: #fff;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); }
+
+  .vehicle-entry-block { border: 1.5px dashed var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; position: relative; }
+  .vehicle-entry-block .remove-vehicle { position: absolute; top: 8px; right: 8px; background: #fee2e2; color: var(--returned); border: none; border-radius: 6px; padding: 4px 9px; font-size: 11px; font-weight: 700; }
+  .vehicle-entry-num { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 8px; }
+
+  .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; margin-top: 6px; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-secondary { background: #f1f5f9; color: var(--text); }
+  .btn-danger { background: #fee2e2; color: var(--returned); }
+  .btn-add-vehicle { background: #eef2ff; color: var(--primary); border: 1.5px dashed var(--primary); padding: 12px; font-size: 13px; }
+  .btn-sm { padding: 9px; font-size: 12px; margin-top: 0; }
+
+  .action-row { display: flex; gap: 8px; margin-top: 8px; }
+  .action-row .btn { margin-top: 0; }
+
+  .status-msg { padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
+  .status-msg.error { background: #fee2e2; color: #991b1b; display: block; }
+  .status-msg.success { background: #dcfce7; color: #166534; display: block; }
+
+  /* ===== VEHICLE DETAIL ===== */
+  .detail-header { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .detail-vin { font-size: 18px; font-weight: 800; }
+  .detail-model { color: var(--text-light); font-size: 13px; margin-top: 2px; }
+  .detail-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row .lbl { color: var(--text-light); }
+  .detail-row .val { font-weight: 600; }
+
+  .subtask-card { background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .subtask-card h4 { margin: 0 0 8px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .subtask-status-tag { font-size: 10px; padding: 3px 9px; border-radius: 10px; font-weight: 700; }
+
+  /* ===== HISTORY TIMELINE ===== */
+  .timeline-item { display: flex; gap: 10px; margin-bottom: 4px; }
+  .timeline-dot-col { display: flex; flex-direction: column; align-items: center; }
+  .timeline-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); margin-top: 4px; }
+  .timeline-line { width: 2px; flex: 1; background: var(--border); min-height: 30px; }
+  .timeline-content { background: #fff; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; flex: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .timeline-type { font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; }
+  .timeline-details { font-size: 13px; margin: 3px 0; }
+  .timeline-meta { font-size: 11px; color: var(--text-light); }
+
+  .loading-spinner { text-align: center; padding: 30px; color: var(--text-light); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- ==================== LOGIN SCREEN ==================== -->
+<div id="loginScreen" class="screen active">
+  <div class="login-card">
+    <h2>SalesOps</h2>
+    <div class="tagline">Ayyappan Agency &mdash; Vehicle Sales Tracker</div>
+    <input type="text" id="loginUsername" placeholder="Username" autocomplete="username">
+    <input type="password" id="loginPin" placeholder="PIN" inputmode="numeric" autocomplete="current-password">
+    <button class="btn-primary" onclick="doLogin()" style="border:none;">Login</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ==================== MAIN APP SHELL ==================== -->
+<div id="appShell" style="display:none;">
+  <div class="topbar">
+    <div>
+      <h1>SalesOps</h1>
+      <div class="user-info" id="userInfoLabel"></div>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">Logout</button>
+  </div>
+
+  <!-- ===== DASHBOARD SCREEN ===== -->
+  <div id="dashboardScreen" class="screen">
+    <div class="stat-grid">
+      <div class="stat-card stock"><div class="num" id="statStock">-</div><div class="label">In Stock</div></div>
+      <div class="stat-card booking"><div class="num" id="statBooked">-</div><div class="label">Booked / In Progress</div></div>
+      <div class="stat-card delivered"><div class="num" id="statDeliveredToday">-</div><div class="label">Delivered Today</div></div>
+      <div class="stat-card returned"><div class="num" id="statReturned">-</div><div class="label">Returned</div></div>
+    </div>
+    <div class="section-title">Pending Sub-Tasks</div>
+    <div class="pending-row">
+      <div class="pending-chip"><span class="n" id="statPendingFinance">-</span>Finance</div>
+      <div class="pending-chip"><span class="n" id="statPendingInsurance">-</span>Insurance</div>
+      <div class="pending-chip"><span class="n" id="statPendingRTO">-</span>RTO</div>
+    </div>
+    <button class="btn btn-secondary" onclick="loadDashboard()">Refresh</button>
+  </div>
+
+  <!-- ===== STOCK LIST SCREEN ===== -->
+  <div id="stockScreen" class="screen">
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="Search VIN, Model, Customer..." oninput="renderStockList()">
+    </div>
+    <div class="filter-chips" id="filterChips">
+      <button class="filter-chip active" data-status="all" onclick="setFilter('all')">All</button>
+      <button class="filter-chip" data-status="stock" onclick="setFilter('stock')">Stock</button>
+      <button class="filter-chip" data-status="booking" onclick="setFilter('booking')">Booking</button>
+      <button class="filter-chip" data-status="finance" onclick="setFilter('finance')">Finance</button>
+      <button class="filter-chip" data-status="insurance" onclick="setFilter('insurance')">Insurance</button>
+      <button class="filter-chip" data-status="rto" onclick="setFilter('rto')">RTO</button>
+      <button class="filter-chip" data-status="delivered" onclick="setFilter('delivered')">Delivered</button>
+      <button class="filter-chip" data-status="returned" onclick="setFilter('returned')">Returned</button>
+    </div>
+    <div id="stockListContainer"><div class="loading-spinner">Loading vehicles...</div></div>
+  </div>
+
+  <!-- ===== VIN HISTORY SCREEN ===== -->
+  <div id="historyScreen" class="screen">
+    <div class="search-bar">
+      <input type="text" id="historyVinInput" placeholder="Enter VIN to search history" style="text-transform:uppercase;">
+      <button class="btn btn-primary btn-sm" style="width:auto; padding:11px 16px;" onclick="searchVinHistory()">Search</button>
+    </div>
+    <div id="historyResultContainer"></div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" id="navDashboard" onclick="showScreen('dashboard')">
+      <span class="icon">&#128202;</span>Dashboard
+    </button>
+    <button class="nav-btn" id="navStock" onclick="showScreen('stock')">
+      <span class="icon">&#127960;</span>Stock
+    </button>
+    <button class="nav-btn" id="navHistory" onclick="showScreen('history')">
+      <span class="icon">&#128337;</span>History
+    </button>
+  </div>
+
+  <button class="fab" id="addPurchaseFab" onclick="openAddPurchaseModal()">+</button>
+</div>
+
+<!-- ==================== ADD PURCHASE MODAL ==================== -->
+<div class="modal-overlay" id="purchaseModal">
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h3>Add Purchase (New Stock)</h3>
+      <button class="modal-close" onclick="closeModal('purchaseModal')">&times;</button>
+    </div>
+    <div class="status-msg" id="purchaseStatusMsg"></div>
+    <div class="form-group">
+      <label>Purchase Invoice / DC No.</label>
+      <input type="text" id="pInvoiceNo" placeholder="e.g. INV1001">
+    </div>
+    <div class="form-group">
+      <label>Purchase Date</label>
+      <input type="date" id="pDate">
+    </div>
+    <div class="section-title" style="margin-top:14px;">Vehicles in this DC</div>
+    <div id="vehicleEntriesContainer"></div>
+    <button class="btn btn-add-vehicle" onclick="addVehicleEntry()">+ Add Another Vehicle</button>
+    <button class="btn btn-primary" onclick="submitPurchase()">Save Purchase</button>
+  </div>
+</div>
+
+<!-- ==================== VEHICLE DETAIL MODAL ==================== -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h3>Vehicle Details</h3>
+      <button class="modal-close" onclick="closeModal('detailModal')">&times;</button>
+    </div>
+    <div class="status-msg" id="detailStatusMsg"></div>
+    <div id="detailContent"><div class="loading-spinner">Loading...</div></div>
+  </div>
+</div>
+
+<!-- ==================== BOOKING MODAL ==================== -->
+<div class="modal-overlay" id="bookingModal">
+  <div class="modal-sheet">
+    <div class="modal-header">
+      <h3>Book Vehicle</h3>
+      <button class="modal-close" onclick="closeModal('bookingModal')">&times;</button>
+    </div>
+    <div class="status-msg" id="bookingStatusMsg"></div>
+    <div class="form-group"><label>VIN</label><input type="text" id="bVin" readonly style="background:#f1f5f9;"></div>
+    <div class="form-group"><label>Customer Name</label><input type="text" id="bCustomerName" placeholder="Full name"></div>
+    <div class="form-group"><label>Customer Phone</label><input type="tel" id="bCustomerPhone" placeholder="10-digit mobile"></div>
+    <div class="form-group"><label>Booking Date</label><input type="date" id="bDate"></div>
+    <button class="btn btn-primary" onclick="submitBooking()">Confirm Booking</button>
+  </div>
+</div>
+
+<!-- ==================== FINANCE MODAL ==================== -->
+<div class="modal-overlay" id="financeModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Update Finance</h3><button class="modal-close" onclick="closeModal('financeModal')">&times;</button></div>
+    <div class="status-msg" id="financeStatusMsg"></div>
+    <input type="hidden" id="fVin">
+    <div class="form-group">
+      <label>Finance Status</label>
+      <select id="fStatus">
+        <option value="not_applicable">Not Applicable (Cash)</option>
+        <option value="pending">Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Finance Company</label><select id="fCompany"></select></div>
+    <div class="form-group"><label>Approved Date</label><input type="date" id="fDate"></div>
+    <button class="btn btn-primary" onclick="submitFinance()">Update Finance</button>
+  </div>
+</div>
+
+<!-- ==================== INSURANCE MODAL ==================== -->
+<div class="modal-overlay" id="insuranceModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Update Insurance</h3><button class="modal-close" onclick="closeModal('insuranceModal')">&times;</button></div>
+    <div class="status-msg" id="insuranceStatusMsg"></div>
+    <input type="hidden" id="iVin">
+    <div class="form-group">
+      <label>Insurance Status</label>
+      <select id="iStatus"><option value="pending">Pending</option><option value="done">Done</option></select>
+    </div>
+    <div class="form-group"><label>Insurance Company</label><select id="iCompany"></select></div>
+    <div class="form-group"><label>Insurance Date</label><input type="date" id="iDate"></div>
+    <button class="btn btn-primary" onclick="submitInsurance()">Update Insurance</button>
+  </div>
+</div>
+
+<!-- ==================== RTO MODAL ==================== -->
+<div class="modal-overlay" id="rtoModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Update RTO</h3><button class="modal-close" onclick="closeModal('rtoModal')">&times;</button></div>
+    <div class="status-msg" id="rtoStatusMsg"></div>
+    <input type="hidden" id="rVin">
+    <div class="form-group">
+      <label>RTO Status</label>
+      <select id="rStatus"><option value="pending">Pending</option><option value="done">Done</option></select>
+    </div>
+    <div class="form-group"><label>RTO Number</label><input type="text" id="rNumber" placeholder="e.g. TN48AB1234" style="text-transform:uppercase;"></div>
+    <div class="form-group"><label>RTO Date</label><input type="date" id="rDate"></div>
+    <button class="btn btn-primary" onclick="submitRTO()">Update RTO</button>
+  </div>
+</div>
+
+<!-- ==================== DELIVERY MODAL ==================== -->
+<div class="modal-overlay" id="deliveryModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Mark Delivered</h3><button class="modal-close" onclick="closeModal('deliveryModal')">&times;</button></div>
+    <div class="status-msg" id="deliveryStatusMsg"></div>
+    <input type="hidden" id="dVin">
+    <div class="form-group"><label>Delivery Date</label><input type="date" id="dDate"></div>
+    <button class="btn btn-primary" onclick="submitDelivery()">Confirm Delivery</button>
+  </div>
+</div>
+
+<!-- ==================== RETURN MODAL ==================== -->
+<div class="modal-overlay" id="returnModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Return Vehicle</h3><button class="modal-close" onclick="closeModal('returnModal')">&times;</button></div>
+    <div class="status-msg" id="returnStatusMsg"></div>
+    <input type="hidden" id="retVin">
+    <div class="form-group"><label>Return Date</label><input type="date" id="retDate"></div>
+    <div class="form-group"><label>Return Reason</label><textarea id="retReason" rows="3" placeholder="Reason for return"></textarea></div>
+    <button class="btn btn-danger" onclick="submitReturn()">Confirm Return</button>
+  </div>
+</div>
+
+<script>
+// ==================== CONFIG ====================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxtygNhogGV_x6g6nL8wmHhRpGk5JTZZ5Y2E1tnFCv1iTocjUeb9tuPSsEtr__15I1X3w/exec';
+
+let currentUser = null;   // { username, fullName, role, permissions }
+let vehicleCache = [];    // last loaded stock list
+let listsCache = {};      // dropdown lists from getLists
+let currentFilter = 'all';
+let vehicleEntryCount = 0;
+
+// ==================== API HELPER ====================
+async function apiCall(action, extraParams) {
+  const payload = Object.assign({ action: action }, currentUser ? { username: currentUser.username, pin: currentUser.pin } : {}, extraParams || {});
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: 'Network error: ' + err.message };
+  }
+}
+
+// ==================== SESSION PERSISTENCE ====================
+function saveSession() {
+  try {
+    sessionStorage.setItem('salesops_session', JSON.stringify(currentUser));
+  } catch (e) { /* ignore */ }
+}
+function loadSession() {
+  try {
+    const s = sessionStorage.getItem('salesops_session');
+    if (s) currentUser = JSON.parse(s);
+  } catch (e) { /* ignore */ }
+}
+function clearSession() {
+  try { sessionStorage.removeItem('salesops_session'); } catch (e) { /* ignore */ }
+}
+
+// ==================== LOGIN / LOGOUT ====================
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const pin = document.getElementById('loginPin').value.trim();
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+
+  if (!username || !pin) {
+    errEl.textContent = 'Enter username and PIN.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const res = await apiCallRaw('login', { username: username, pin: pin });
+  if (res.success) {
+    currentUser = { username: username, pin: pin, fullName: res.fullName, role: res.role, permissions: res.permissions };
+    saveSession();
+    enterApp();
+  } else {
+    errEl.textContent = res.error || 'Login failed.';
+    errEl.style.display = 'block';
+  }
+}
+
+// Raw call used only for login (before currentUser is set)
+async function apiCallRaw(action, params) {
+  const payload = Object.assign({ action: action }, params);
+  try {
+    const res = await fetch(GAS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: 'Network error: ' + err.message };
+  }
+}
+
+function doLogout() {
+  currentUser = null;
+  clearSession();
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('loginScreen').classList.add('active');
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPin').value = '';
+}
+
+async function enterApp() {
+  document.getElementById('loginScreen').classList.remove('active');
+  document.getElementById('appShell').style.display = 'block';
+  document.getElementById('userInfoLabel').textContent = currentUser.fullName + ' (' + currentUser.role + ')';
+
+  applyRolePermissions();
+
+  try {
+    const listsRes = await apiCall('getLists');
+    if (listsRes.success) {
+      listsCache = listsRes.lists;
+      populateDropdowns();
+    }
+  } catch (e) {
+    console.error('getLists failed:', e);
+    // Non-fatal: dropdowns will just be empty until retried; app still usable.
+  }
+
+  showScreen('dashboard');
+  loadDashboard();
+}
+
+// ==================== ROLE-BASED UI ====================
+function applyRolePermissions() {
+  const perms = currentUser.permissions || [];
+  document.getElementById('addPurchaseFab').style.display = perms.indexOf('purchase') !== -1 ? 'flex' : 'none';
+  document.getElementById('navHistory').style.display = perms.indexOf('history') !== -1 ? 'flex' : 'none';
+  document.getElementById('navDashboard').style.display = perms.indexOf('dashboard') !== -1 ? 'flex' : 'none';
+}
+
+function can(action) {
+  return currentUser && currentUser.permissions && currentUser.permissions.indexOf(action) !== -1;
+}
+
+// ==================== NAVIGATION ====================
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(name + 'Screen').classList.add('active');
+  document.getElementById('nav' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+
+  if (name === 'stock') loadStockList();
+  if (name === 'dashboard') loadDashboard();
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// ==================== DROPDOWNS ====================
+function populateDropdowns() {
+  fillSelect('fCompany', listsCache.FinanceCompanies || []);
+  fillSelect('iCompany', listsCache.InsuranceCompanies || []);
+}
+function fillSelect(id, options) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<option value="">-- Select --</option>' + options.map(o => `<option value="${o}">${o}</option>`).join('');
+}
+
+// ==================== DASHBOARD ====================
+async function loadDashboard() {
+  const res = await apiCall('getDashboard');
+  if (!res.success) return;
+  document.getElementById('statStock').textContent = res.stockCount;
+  document.getElementById('statBooked').textContent = res.bookedCount;
+  document.getElementById('statDeliveredToday').textContent = res.deliveredToday;
+  document.getElementById('statReturned').textContent = res.returnedCount;
+  document.getElementById('statPendingFinance').textContent = res.pendingFinance;
+  document.getElementById('statPendingInsurance').textContent = res.pendingInsurance;
+  document.getElementById('statPendingRTO').textContent = res.pendingRTO;
+}
+
+// ==================== STOCK LIST ====================
+// Note: since there is no dedicated "list all vehicles" backend action yet in this build,
+// we derive the list from Dashboard + individual VIN History lookups is NOT efficient.
+// This calls a lightweight getLists-style full scan via a dedicated action.
+async function loadStockList() {
+  document.getElementById('stockListContainer').innerHTML = '<div class="loading-spinner">Loading vehicles...</div>';
+  const res = await apiCall('getStockList');
+  if (!res.success) {
+    document.getElementById('stockListContainer').innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div>' + (res.error || 'Failed to load') + '</div>';
+    return;
+  }
+  vehicleCache = res.vehicles || [];
+  renderStockList();
+}
+
+function setFilter(status) {
+  currentFilter = status;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.filter-chip[data-status="${status}"]`).classList.add('active');
+  renderStockList();
+}
+
+function renderStockList() {
+  const search = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+  let list = vehicleCache;
+
+  if (currentFilter !== 'all') {
+    list = list.filter(v => v.CurrentStatus === currentFilter);
+  }
+  if (search) {
+    list = list.filter(v =>
+      (v.VIN || '').toLowerCase().includes(search) ||
+      (v.Model || '').toLowerCase().includes(search) ||
+      (v.CustomerName || '').toLowerCase().includes(search)
+    );
+  }
+
+  const container = document.getElementById('stockListContainer');
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">&#127960;</div>No vehicles found.</div>';
+    return;
+  }
+
+  container.innerHTML = list.map(v => renderVehicleCard(v)).join('');
+}
+
+function subChipClass(status, doneValue) {
+  if (status === 'not_applicable') return 'na';
+  if (status === doneValue) return 'done';
+  if (status === 'rejected') return 'rejected';
+  return 'pending';
+}
+
+function renderVehicleCard(v) {
+  const status = v.CurrentStatus || 'stock';
+  const financeChip = v.FinanceStatus ? `<span class="sub-chip ${subChipClass(v.FinanceStatus, 'approved')}">Finance: ${v.FinanceStatus}</span>` : '';
+  const insuranceChip = v.InsuranceStatus ? `<span class="sub-chip ${subChipClass(v.InsuranceStatus, 'done')}">Insurance: ${v.InsuranceStatus}</span>` : '';
+  const rtoChip = v.RTOStatus ? `<span class="sub-chip ${subChipClass(v.RTOStatus, 'done')}">RTO: ${v.RTOStatus}</span>` : '';
+
+  return `
+    <div class="vehicle-card status-${status}" onclick="openVehicleDetail('${v.VIN}')">
+      <div class="vc-top">
+        <div>
+          <div class="vc-vin">${v.VIN}</div>
+          <div class="vc-model">${v.Model || ''} ${v.Variant || ''} &middot; ${v.Color || ''}</div>
+        </div>
+        <span class="vc-status-badge ${status}">${status}</span>
+      </div>
+      ${(financeChip || insuranceChip || rtoChip) ? `<div class="vc-sub-chips">${financeChip}${insuranceChip}${rtoChip}</div>` : ''}
+    </div>
+  `;
+}
+
+// ==================== ADD PURCHASE (multi-vehicle) ====================
+function openAddPurchaseModal() {
+  document.getElementById('pInvoiceNo').value = '';
+  document.getElementById('pDate').value = todayStr();
+  document.getElementById('vehicleEntriesContainer').innerHTML = '';
+  document.getElementById('purchaseStatusMsg').style.display = 'none';
+  vehicleEntryCount = 0;
+  addVehicleEntry();
+  openModal('purchaseModal');
+}
+
+function addVehicleEntry() {
+  vehicleEntryCount++;
+  const idx = vehicleEntryCount;
+  const modelOptions = (listsCache.Models || []).map(m => `<option value="${m}">${m}</option>`).join('');
+  const variantOptions = (listsCache.Variants || []).map(m => `<option value="${m}">${m}</option>`).join('');
+  const colorOptions = (listsCache.Colors || []).map(m => `<option value="${m}">${m}</option>`).join('');
+
+  const block = document.createElement('div');
+  block.className = 'vehicle-entry-block';
+  block.id = 'vehicleEntry' + idx;
+  block.innerHTML = `
+    <div class="vehicle-entry-num">Vehicle #${idx}</div>
+    <button type="button" class="remove-vehicle" onclick="removeVehicleEntry(${idx})">Remove</button>
+    <div class="form-group"><label>VIN Number</label><input type="text" id="v${idx}_vin" style="text-transform:uppercase;" placeholder="Chassis / VIN"></div>
+    <div class="form-group"><label>Engine Number</label><input type="text" id="v${idx}_engine" style="text-transform:uppercase;"></div>
+    <div class="form-group"><label>Model</label><select id="v${idx}_model"><option value="">-- Select --</option>${modelOptions}</select></div>
+    <div class="form-group"><label>Variant</label><select id="v${idx}_variant"><option value="">-- Select --</option>${variantOptions}</select></div>
+    <div class="form-group"><label>Color</label><select id="v${idx}_color"><option value="">-- Select --</option>${colorOptions}</select></div>
+  `;
+  document.getElementById('vehicleEntriesContainer').appendChild(block);
+}
+
+function removeVehicleEntry(idx) {
+  const el = document.getElementById('vehicleEntry' + idx);
+  if (el) el.remove();
+}
+
+async function submitPurchase() {
+  const invoiceNo = document.getElementById('pInvoiceNo').value.trim();
+  const purchaseDate = document.getElementById('pDate').value;
+  const msgEl = document.getElementById('purchaseStatusMsg');
+  msgEl.style.display = 'none';
+
+  if (!invoiceNo || !purchaseDate) {
+    showMsg(msgEl, 'Please enter Invoice No and Purchase Date.', 'error');
+    return;
+  }
+
+  const blocks = document.querySelectorAll('.vehicle-entry-block');
+  if (blocks.length === 0) {
+    showMsg(msgEl, 'Add at least one vehicle.', 'error');
+    return;
+  }
+
+  const vehicles = [];
+  for (const block of blocks) {
+    const idx = block.id.replace('vehicleEntry', '');
+    const vin = document.getElementById('v' + idx + '_vin').value.trim();
+    if (!vin) {
+      showMsg(msgEl, 'VIN is required for all vehicle entries.', 'error');
+      return;
+    }
+    vehicles.push({
+      vin: vin,
+      engineNumber: document.getElementById('v' + idx + '_engine').value.trim(),
+      model: document.getElementById('v' + idx + '_model').value,
+      variant: document.getElementById('v' + idx + '_variant').value,
+      color: document.getElementById('v' + idx + '_color').value
+    });
+  }
+
+  const res = await apiCall('addPurchase', { purchaseInvoiceNo: invoiceNo, purchaseDate: purchaseDate, vehicles: vehicles });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => {
+      closeModal('purchaseModal');
+      loadStockList();
+      loadDashboard();
+    }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = 'status-msg ' + type;
+  el.style.display = 'block';
+}
+
+// ==================== VEHICLE DETAIL ====================
+async function openVehicleDetail(vin) {
+  openModal('detailModal');
+  document.getElementById('detailStatusMsg').style.display = 'none';
+  document.getElementById('detailContent').innerHTML = '<div class="loading-spinner">Loading...</div>';
+
+  const res = await apiCall('getVinHistory', { vin: vin });
+  if (!res.success) {
+    document.getElementById('detailContent').innerHTML = '<div class="empty-state">' + res.error + '</div>';
+    return;
+  }
+  renderDetail(res.vehicle, res.timeline);
+}
+
+function renderDetail(v, timeline) {
+  const status = v.CurrentStatus;
+
+  // Derive latest sub-task display values from timeline (most recent entries)
+  let financeStatus = null, insuranceStatus = null, rtoStatus = null;
+  timeline.forEach(t => {
+    if (t.LogType === 'Finance') financeStatus = t.Details;
+    if (t.LogType === 'Insurance') insuranceStatus = t.Details;
+    if (t.LogType === 'RTO') rtoStatus = t.Details;
+  });
+
+  let actionsHtml = '';
+  if (status === 'stock' && can('booking')) {
+    actionsHtml += `<button class="btn btn-primary" onclick="openBookingModal('${v.VIN}')">Book This Vehicle</button>`;
+  }
+  if (status === 'stock' && can('return')) {
+    actionsHtml += `<button class="btn btn-danger" onclick="openReturnModal('${v.VIN}')">Return to Supplier</button>`;
+  }
+  if (status !== 'stock' && status !== 'delivered' && status !== 'returned') {
+    if (can('finance')) actionsHtml += `<button class="btn btn-secondary" onclick="openFinanceModal('${v.VIN}')">Update Finance</button>`;
+    if (can('insurance')) actionsHtml += `<button class="btn btn-secondary" onclick="openInsuranceModal('${v.VIN}')">Update Insurance</button>`;
+    if (can('rto')) actionsHtml += `<button class="btn btn-secondary" onclick="openRTOModal('${v.VIN}')">Update RTO</button>`;
+    if (can('delivery')) actionsHtml += `<button class="btn btn-primary" onclick="openDeliveryModal('${v.VIN}')">Mark Delivered</button>`;
+  }
+
+  const timelineHtml = timeline.length === 0 ? '<div class="empty-state">No history yet.</div>' :
+    timeline.slice().reverse().map(t => `
+      <div class="timeline-item">
+        <div class="timeline-dot-col"><div class="timeline-dot"></div><div class="timeline-line"></div></div>
+        <div class="timeline-content">
+          <div class="timeline-type">${t.LogType}</div>
+          <div class="timeline-details">${t.Details}</div>
+          <div class="timeline-meta">${t.LoggedBy} &middot; ${formatTimestamp(t.Timestamp)} &middot; ${t.RefNo}</div>
+        </div>
+      </div>
+    `).join('');
+
+  document.getElementById('detailContent').innerHTML = `
+    <div class="detail-header">
+      <div class="detail-vin">${v.VIN}</div>
+      <div class="detail-model">${v.Model} ${v.Variant} &middot; ${v.Color}</div>
+      <div class="detail-row"><span class="lbl">Status</span><span class="val">${status}</span></div>
+      <div class="detail-row"><span class="lbl">Engine No.</span><span class="val">${v.EngineNumber || '-'}</span></div>
+      <div class="detail-row"><span class="lbl">Purchase Invoice</span><span class="val">${v.PurchaseInvoiceNo || '-'}</span></div>
+    </div>
+    ${actionsHtml ? `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">${actionsHtml}</div>` : ''}
+    <div class="section-title">Timeline</div>
+    ${timelineHtml}
+  `;
+}
+
+function formatTimestamp(ts) {
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-IN') + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return ts;
+  }
+}
+
+// ==================== BOOKING ====================
+function openBookingModal(vin) {
+  document.getElementById('bVin').value = vin;
+  document.getElementById('bCustomerName').value = '';
+  document.getElementById('bCustomerPhone').value = '';
+  document.getElementById('bDate').value = todayStr();
+  document.getElementById('bookingStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('bookingModal');
+}
+async function submitBooking() {
+  const msgEl = document.getElementById('bookingStatusMsg');
+  const vin = document.getElementById('bVin').value;
+  const name = document.getElementById('bCustomerName').value.trim();
+  const phone = document.getElementById('bCustomerPhone').value.trim();
+  const date = document.getElementById('bDate').value;
+  if (!name || !phone || !date) { showMsg(msgEl, 'All fields are required.', 'error'); return; }
+
+  const res = await apiCall('addBooking', { vin: vin, customerName: name, customerPhone: phone, bookingDate: date });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('bookingModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== FINANCE ====================
+function openFinanceModal(vin) {
+  document.getElementById('fVin').value = vin;
+  document.getElementById('fStatus').value = 'pending';
+  document.getElementById('fCompany').value = '';
+  document.getElementById('fDate').value = todayStr();
+  document.getElementById('financeStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('financeModal');
+}
+async function submitFinance() {
+  const msgEl = document.getElementById('financeStatusMsg');
+  const vin = document.getElementById('fVin').value;
+  const res = await apiCall('updateFinance', {
+    vin: vin,
+    financeStatus: document.getElementById('fStatus').value,
+    financeCompany: document.getElementById('fCompany').value,
+    approvedDate: document.getElementById('fDate').value
+  });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('financeModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== INSURANCE ====================
+function openInsuranceModal(vin) {
+  document.getElementById('iVin').value = vin;
+  document.getElementById('iStatus').value = 'pending';
+  document.getElementById('iCompany').value = '';
+  document.getElementById('iDate').value = todayStr();
+  document.getElementById('insuranceStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('insuranceModal');
+}
+async function submitInsurance() {
+  const msgEl = document.getElementById('insuranceStatusMsg');
+  const vin = document.getElementById('iVin').value;
+  const res = await apiCall('updateInsurance', {
+    vin: vin,
+    insuranceStatus: document.getElementById('iStatus').value,
+    insuranceCompany: document.getElementById('iCompany').value,
+    insuranceDate: document.getElementById('iDate').value
+  });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('insuranceModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== RTO ====================
+function openRTOModal(vin) {
+  document.getElementById('rVin').value = vin;
+  document.getElementById('rStatus').value = 'pending';
+  document.getElementById('rNumber').value = '';
+  document.getElementById('rDate').value = todayStr();
+  document.getElementById('rtoStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('rtoModal');
+}
+async function submitRTO() {
+  const msgEl = document.getElementById('rtoStatusMsg');
+  const vin = document.getElementById('rVin').value;
+  const res = await apiCall('updateRTO', {
+    vin: vin,
+    rtoStatus: document.getElementById('rStatus').value,
+    rtoNumber: document.getElementById('rNumber').value.trim(),
+    rtoDate: document.getElementById('rDate').value
+  });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('rtoModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== DELIVERY ====================
+function openDeliveryModal(vin) {
+  document.getElementById('dVin').value = vin;
+  document.getElementById('dDate').value = todayStr();
+  document.getElementById('deliveryStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('deliveryModal');
+}
+async function submitDelivery() {
+  const msgEl = document.getElementById('deliveryStatusMsg');
+  const vin = document.getElementById('dVin').value;
+  const res = await apiCall('markDelivered', { vin: vin, deliveryDate: document.getElementById('dDate').value });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('deliveryModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== RETURN ====================
+function openReturnModal(vin) {
+  document.getElementById('retVin').value = vin;
+  document.getElementById('retDate').value = todayStr();
+  document.getElementById('retReason').value = '';
+  document.getElementById('returnStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('returnModal');
+}
+async function submitReturn() {
+  const msgEl = document.getElementById('returnStatusMsg');
+  const vin = document.getElementById('retVin').value;
+  const reason = document.getElementById('retReason').value.trim();
+  if (!reason) { showMsg(msgEl, 'Return reason is required.', 'error'); return; }
+
+  const res = await apiCall('addReturn', { vin: vin, returnDate: document.getElementById('retDate').value, returnReason: reason });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('returnModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== VIN HISTORY SEARCH SCREEN ====================
+async function searchVinHistory() {
+  const vin = document.getElementById('historyVinInput').value.trim();
+  const container = document.getElementById('historyResultContainer');
+  if (!vin) { container.innerHTML = '<div class="empty-state">Enter a VIN to search.</div>'; return; }
+
+  container.innerHTML = '<div class="loading-spinner">Searching...</div>';
+  const res = await apiCall('getVinHistory', { vin: vin });
+  if (!res.success) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">&#9888;</div>' + res.error + '</div>';
+    return;
+  }
+
+  const v = res.vehicle;
+  const timeline = res.timeline;
+  const timelineHtml = timeline.slice().reverse().map(t => `
+    <div class="timeline-item">
+      <div class="timeline-dot-col"><div class="timeline-dot"></div><div class="timeline-line"></div></div>
+      <div class="timeline-content">
+        <div class="timeline-type">${t.LogType}</div>
+        <div class="timeline-details">${t.Details}</div>
+        <div class="timeline-meta">${t.LoggedBy} &middot; ${formatTimestamp(t.Timestamp)} &middot; ${t.RefNo}</div>
+      </div>
+    </div>
+  `).join('');
+
+  container.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-vin">${v.VIN}</div>
+      <div class="detail-model">${v.Model} ${v.Variant} &middot; ${v.Color}</div>
+      <div class="detail-row"><span class="lbl">Current Status</span><span class="val">${v.CurrentStatus}</span></div>
+    </div>
+    <div class="section-title">Full Timeline (${timeline.length} entries)</div>
+    ${timelineHtml}
+  `;
+}
+
+// ==================== INIT ====================
+window.addEventListener('load', () => {
+  loadSession();
+  if (currentUser) {
+    enterApp();
+  }
+});
+</script>
+
+</body>
+</html>
