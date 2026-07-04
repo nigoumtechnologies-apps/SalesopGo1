@@ -241,11 +241,62 @@
     </div>
     <div class="section-title">Pending Sub-Tasks</div>
     <div class="pending-row">
-      <div class="pending-chip"><span class="n" id="statPendingFinance">-</span>Finance</div>
-      <div class="pending-chip"><span class="n" id="statPendingInsurance">-</span>Insurance</div>
-      <div class="pending-chip"><span class="n" id="statPendingRTO">-</span>RTO</div>
+      <div class="pending-chip" onclick="showScreen('financePending')" style="cursor:pointer;"><span class="n" id="statPendingFinance">-</span>Finance</div>
+      <div class="pending-chip" onclick="showScreen('insurancePending')" style="cursor:pointer;"><span class="n" id="statPendingInsurance">-</span>Insurance</div>
+      <div class="pending-chip" onclick="showScreen('rtoPending')" style="cursor:pointer;"><span class="n" id="statPendingRTO">-</span>RTO</div>
     </div>
-    <button class="btn btn-secondary" onclick="loadDashboard()">Refresh</button>
+
+    <div class="section-title">Model-wise Available Stock</div>
+    <div id="modelWiseStockContainer"><div class="loading-spinner">Loading...</div></div>
+
+    <div class="section-title">Quick Links</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <button class="btn btn-secondary" onclick="showScreen('reports')" id="quickLinkReports" style="display:none;">Reports</button>
+    </div>
+
+    <button class="btn btn-secondary" onclick="loadDashboard()" style="margin-top:14px;">Refresh</button>
+  </div>
+
+  <!-- ===== INSURANCE PENDING SCREEN ===== -->
+  <div id="insurancePendingScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">Insurance Pending</div>
+    <div id="insurancePendingContainer"><div class="loading-spinner">Loading...</div></div>
+  </div>
+
+  <!-- ===== RTO PENDING SCREEN ===== -->
+  <div id="rtoPendingScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">RTO Pending</div>
+    <div id="rtoPendingContainer"><div class="loading-spinner">Loading...</div></div>
+  </div>
+
+  <!-- ===== FINANCE PENDING SCREEN (reuses same pattern, filters Finance log) ===== -->
+  <div id="financePendingScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">Finance Pending</div>
+    <div id="financePendingContainer"><div class="loading-spinner">Loading...</div></div>
+  </div>
+
+  <!-- ===== REPORTS SCREEN ===== -->
+  <div id="reportsScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">Reports</div>
+    <div class="form-group">
+      <label>From Date</label>
+      <input type="date" id="reportFromDate">
+    </div>
+    <div class="form-group">
+      <label>To Date</label>
+      <input type="date" id="reportToDate">
+    </div>
+    <div class="form-group">
+      <label>Transaction Type</label>
+      <select id="reportLogType">
+        <option value="All">All (within my access)</option>
+      </select>
+    </div>
+    <div class="action-row">
+      <button class="btn btn-secondary" onclick="runReport('summary')">Summary</button>
+      <button class="btn btn-primary" onclick="runReport('list')">List</button>
+    </div>
+    <div id="reportResultContainer" style="margin-top:14px;"></div>
   </div>
 
   <!-- ===== STOCK LIST SCREEN ===== -->
@@ -534,6 +585,7 @@ function applyRolePermissions() {
   document.getElementById('addPurchaseFab').style.display = perms.indexOf('purchase') !== -1 ? 'flex' : 'none';
   document.getElementById('navHistory').style.display = perms.indexOf('history') !== -1 ? 'flex' : 'none';
   document.getElementById('navDashboard').style.display = perms.indexOf('dashboard') !== -1 ? 'flex' : 'none';
+  document.getElementById('quickLinkReports').style.display = perms.indexOf('reports') !== -1 ? 'block' : 'none';
 }
 
 function can(action) {
@@ -545,10 +597,19 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(name + 'Screen').classList.add('active');
-  document.getElementById('nav' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+
+  // Only Dashboard/Stock/History have bottom-nav buttons; other screens (reports,
+  // pending lists) are reached via quick-links and don't have a nav tab to highlight.
+  const navId = 'nav' + name.charAt(0).toUpperCase() + name.slice(1);
+  const navBtn = document.getElementById(navId);
+  if (navBtn) navBtn.classList.add('active');
 
   if (name === 'stock') loadStockList();
   if (name === 'dashboard') loadDashboard();
+  if (name === 'insurancePending') loadInsurancePending();
+  if (name === 'rtoPending') loadRTOPending();
+  if (name === 'financePending') loadFinancePending();
+  if (name === 'reports') initReportsScreen();
 }
 
 function closeModal(id) {
@@ -585,6 +646,160 @@ async function loadDashboard() {
   document.getElementById('statPendingFinance').textContent = res.pendingFinance;
   document.getElementById('statPendingInsurance').textContent = res.pendingInsurance;
   document.getElementById('statPendingRTO').textContent = res.pendingRTO;
+
+  loadModelWiseStock();
+}
+
+async function loadModelWiseStock() {
+  const container = document.getElementById('modelWiseStockContainer');
+  const res = await apiCall('getModelWiseStock');
+  if (!res.success) {
+    container.innerHTML = '<div class="empty-state">' + (res.error || 'Failed to load') + '</div>';
+    return;
+  }
+  const list = res.modelWiseStock || [];
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty-state">No stock available.</div>';
+    return;
+  }
+  container.innerHTML = list.map(m => `
+    <div class="detail-row" style="background:#fff; border-radius:8px; padding:10px 12px; margin-bottom:6px; border-bottom:none; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+      <span class="lbl">${m.model}</span>
+      <span class="val">${m.count}</span>
+    </div>
+  `).join('');
+}
+
+// ==================== INSURANCE / RTO / FINANCE PENDING LISTS ====================
+async function loadInsurancePending() {
+  const container = document.getElementById('insurancePendingContainer');
+  container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+  const res = await apiCall('getInsurancePending');
+  renderPendingList(container, res, 'InsuranceStatus');
+}
+
+async function loadRTOPending() {
+  const container = document.getElementById('rtoPendingContainer');
+  container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+  const res = await apiCall('getRTOPending');
+  renderPendingList(container, res, 'RTOStatus');
+}
+
+async function loadFinancePending() {
+  const container = document.getElementById('financePendingContainer');
+  container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+  // Reuses the stock list endpoint and filters client-side, since there's no dedicated
+  // finance-pending backend action yet (Finance can be not_applicable, unlike the others).
+  const res = await apiCall('getStockList');
+  if (!res.success) {
+    container.innerHTML = '<div class="empty-state">' + res.error + '</div>';
+    return;
+  }
+  const pending = (res.vehicles || []).filter(v =>
+    v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned' &&
+    v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable'
+  );
+  renderPendingListFromVehicles(container, pending, 'FinanceStatus');
+}
+
+function renderPendingList(container, res, statusField) {
+  if (!res.success) {
+    container.innerHTML = '<div class="empty-state">' + res.error + '</div>';
+    return;
+  }
+  renderPendingListFromVehicles(container, res.vehicles || [], statusField);
+}
+
+function renderPendingListFromVehicles(container, vehicles, statusField) {
+  if (vehicles.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">&#9989;</div>Nothing pending.</div>';
+    return;
+  }
+  container.innerHTML = vehicles.map(v => `
+    <div class="vehicle-card status-${v.CurrentStatus}" onclick="openVehicleDetail('${v.VIN}')">
+      <div class="vc-top">
+        <div>
+          <div class="vc-vin">${v.VIN}</div>
+          <div class="vc-model">${v.Model || ''} ${v.Variant || ''} &middot; ${v.CustomerName || 'No customer yet'}</div>
+        </div>
+        <span class="vc-status-badge ${v.CurrentStatus}">${v.CurrentStatus}</span>
+      </div>
+      <div class="vc-sub-chips"><span class="sub-chip pending">${statusField}: ${v.latestSubStatus || v[statusField] || 'not started'}</span></div>
+    </div>
+  `).join('');
+}
+
+// ==================== REPORTS ====================
+function initReportsScreen() {
+  if (!document.getElementById('reportFromDate').value) {
+    document.getElementById('reportFromDate').value = todayStr();
+    document.getElementById('reportToDate').value = todayStr();
+  }
+  // Populate LogType dropdown based on role (matches REPORT_LOGTYPE_ACCESS server-side)
+  const roleTypeMap = {
+    'Admin': ['Purchase', 'Booking', 'Finance', 'Insurance', 'RTO', 'Delivery', 'Return'],
+    'Purchase': ['Purchase'],
+    'Sales': ['Booking', 'Delivery', 'Return'],
+    'Accounts': ['Finance'],
+    'RTO': ['RTO']
+  };
+  const allowed = roleTypeMap[currentUser.role] || [];
+  const select = document.getElementById('reportLogType');
+  select.innerHTML = '<option value="All">All (within my access)</option>' +
+    allowed.map(t => `<option value="${t}">${t}</option>`).join('');
+}
+
+async function runReport(viewType) {
+  const fromDate = document.getElementById('reportFromDate').value;
+  const toDate = document.getElementById('reportToDate').value;
+  const logType = document.getElementById('reportLogType').value;
+  const container = document.getElementById('reportResultContainer');
+
+  if (!fromDate || !toDate) {
+    container.innerHTML = '<div class="status-msg error" style="display:block;">Select From and To dates.</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="loading-spinner">Running report...</div>';
+  const res = await apiCall('getReport', { fromDate: fromDate, toDate: toDate, logType: logType, viewType: viewType });
+
+  if (!res.success) {
+    container.innerHTML = '<div class="status-msg error" style="display:block;">' + res.error + '</div>';
+    return;
+  }
+
+  if (viewType === 'summary') {
+    const summary = res.summary || {};
+    const keys = Object.keys(summary);
+    if (keys.length === 0) {
+      container.innerHTML = '<div class="empty-state">No transactions in this range.</div>';
+      return;
+    }
+    container.innerHTML = `
+      <div class="section-title" style="margin-top:0;">Summary (${res.totalCount} total)</div>
+      ${keys.map(k => `
+        <div class="detail-row" style="background:#fff; border-radius:8px; padding:10px 12px; margin-bottom:6px; border-bottom:none; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+          <span class="lbl">${k}</span><span class="val">${summary[k]}</span>
+        </div>
+      `).join('')}
+    `;
+  } else {
+    const rows = res.rows || [];
+    if (rows.length === 0) {
+      container.innerHTML = '<div class="empty-state">No transactions in this range.</div>';
+      return;
+    }
+    container.innerHTML = `
+      <div class="section-title" style="margin-top:0;">Transactions (${rows.length})</div>
+      ${rows.slice().reverse().map(r => `
+        <div class="timeline-content" style="margin-bottom:8px;">
+          <div class="timeline-type">${r.LogType} &middot; ${r.VIN}</div>
+          <div class="timeline-details">${r.Details}</div>
+          <div class="timeline-meta">${r.LoggedBy} &middot; ${formatTimestamp(r.Timestamp)} &middot; ${r.RefNo}</div>
+        </div>
+      `).join('')}
+    `;
+  }
 }
 
 // ==================== STOCK LIST ====================
