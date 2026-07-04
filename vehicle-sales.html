@@ -828,9 +828,21 @@ function renderStockList() {
   const search = (document.getElementById('searchInput').value || '').trim().toLowerCase();
   let list = vehicleCache;
 
-  if (currentFilter !== 'all') {
+  if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
     list = list.filter(v => v.CurrentStatus === currentFilter);
+  } else if (currentFilter === 'finance') {
+    // Pending Finance = booked but not yet approved/not_applicable (mirrors delivery gate logic)
+    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+      && v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable');
+  } else if (currentFilter === 'insurance') {
+    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+      && v.InsuranceStatus !== 'done');
+  } else if (currentFilter === 'rto') {
+    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+      && v.RTOStatus !== 'done');
   }
+  // currentFilter === 'all' -> no filtering
+
   if (search) {
     list = list.filter(v =>
       (v.VIN || '').toLowerCase().includes(search) ||
