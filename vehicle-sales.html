@@ -357,6 +357,14 @@
       <label>Purchase Date</label>
       <input type="date" id="pDate">
     </div>
+    <div class="form-group">
+      <label>Supplier / Party Name</label>
+      <input type="text" id="pSupplierName" placeholder="e.g. Hero MotoCorp Ltd">
+    </div>
+    <div class="form-group">
+      <label>Initial Location</label>
+      <select id="pInitialLocation"><option value="">-- Select --</option></select>
+    </div>
     <div class="section-title" style="margin-top:14px;">Vehicles in this DC</div>
     <div id="vehicleEntriesContainer"></div>
     <button class="btn btn-add-vehicle" onclick="addVehicleEntry()">+ Add Another Vehicle</button>
@@ -487,6 +495,24 @@
     <div class="form-group"><label>Return Date</label><input type="date" id="retDate"></div>
     <div class="form-group"><label>Return Reason</label><textarea id="retReason" rows="3" placeholder="Reason for return"></textarea></div>
     <button class="btn btn-danger" onclick="submitReturn()">Confirm Return</button>
+  </div>
+</div>
+
+<!-- ==================== TRANSFER MODAL ==================== -->
+<div class="modal-overlay" id="transferModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Transfer Vehicle</h3><button class="modal-close" onclick="closeModal('transferModal')">&times;</button></div>
+    <div class="status-msg" id="transferStatusMsg"></div>
+    <input type="hidden" id="tVin">
+    <div class="form-group">
+      <label>Transfer Type</label>
+      <select id="tType"><option value="Out">Out (leaving a location)</option><option value="In">In (arriving at a location)</option></select>
+    </div>
+    <div class="form-group"><label>From Location</label><select id="tFromLocation"><option value="">-- Select --</option></select></div>
+    <div class="form-group"><label>To Location</label><select id="tToLocation"><option value="">-- Select --</option></select></div>
+    <div class="form-group"><label>Party / Received By (optional)</label><input type="text" id="tPartyName" placeholder="e.g. Branch manager, dealer name"></div>
+    <div class="form-group"><label>Transfer Date</label><input type="date" id="tDate"></div>
+    <button class="btn btn-primary" onclick="submitTransfer()">Confirm Transfer</button>
   </div>
 </div>
 
@@ -661,6 +687,9 @@ function populateDropdowns() {
   fillSelect('fCompany', listsCache.FinanceCompanies || []);
   fillSelect('iCompany', listsCache.InsuranceCompanies || []);
   fillSelect('lCompany', listsCache.FinanceCompanies || []);
+  fillSelect('pInitialLocation', listsCache.Locations || []);
+  fillSelect('tFromLocation', listsCache.Locations || []);
+  fillSelect('tToLocation', listsCache.Locations || []);
 }
 function fillSelect(id, options) {
   const el = document.getElementById(id);
@@ -924,6 +953,8 @@ function renderVehicleCard(v) {
 function openAddPurchaseModal() {
   document.getElementById('pInvoiceNo').value = '';
   document.getElementById('pDate').value = todayStr();
+  document.getElementById('pSupplierName').value = '';
+  document.getElementById('pInitialLocation').value = '';
   document.getElementById('vehicleEntriesContainer').innerHTML = '';
   document.getElementById('purchaseStatusMsg').style.display = 'none';
   vehicleEntryCount = 0;
@@ -992,7 +1023,13 @@ async function submitPurchase() {
     });
   }
 
-  const res = await apiCall('addPurchase', { purchaseInvoiceNo: invoiceNo, purchaseDate: purchaseDate, vehicles: vehicles });
+  const res = await apiCall('addPurchase', {
+    purchaseInvoiceNo: invoiceNo,
+    purchaseDate: purchaseDate,
+    supplierName: document.getElementById('pSupplierName').value.trim(),
+    initialLocation: document.getElementById('pInitialLocation').value,
+    vehicles: vehicles
+  });
   if (res.success) {
     showMsg(msgEl, res.message, 'success');
     setTimeout(() => {
@@ -1050,6 +1087,9 @@ function renderDetail(v, timeline) {
     if (can('rto')) actionsHtml += `<button class="btn btn-secondary" onclick="openRTOModal('${v.VIN}')">Update RTO</button>`;
     if (can('delivery')) actionsHtml += `<button class="btn btn-primary" onclick="openDeliveryModal('${v.VIN}')">Mark Delivered</button>`;
   }
+  if (status !== 'delivered' && status !== 'returned' && can('transfer')) {
+    actionsHtml += `<button class="btn btn-secondary" onclick="openTransferModal('${v.VIN}')">Transfer Location</button>`;
+  }
 
   const timelineHtml = timeline.length === 0 ? '<div class="empty-state">No history yet.</div>' :
     timeline.slice().reverse().map(t => `
@@ -1070,6 +1110,8 @@ function renderDetail(v, timeline) {
       <div class="detail-row"><span class="lbl">Status</span><span class="val">${status}</span></div>
       <div class="detail-row"><span class="lbl">Engine No.</span><span class="val">${v.EngineNumber || '-'}</span></div>
       <div class="detail-row"><span class="lbl">Purchase Invoice</span><span class="val">${v.PurchaseInvoiceNo || '-'}</span></div>
+      <div class="detail-row"><span class="lbl">Current Location</span><span class="val">${v.CurrentLocation || '-'}</span></div>
+      <div class="detail-row"><span class="lbl">Supplier</span><span class="val">${v.SupplierName || '-'}</span></div>
     </div>
     ${actionsHtml ? `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">${actionsHtml}</div>` : ''}
     <div class="section-title">Timeline</div>
@@ -1282,6 +1324,42 @@ async function submitReturn() {
   if (res.success) {
     showMsg(msgEl, res.message, 'success');
     setTimeout(() => { closeModal('returnModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== TRANSFER ====================
+function openTransferModal(vin) {
+  document.getElementById('tVin').value = vin;
+  document.getElementById('tType').value = 'Out';
+  document.getElementById('tFromLocation').value = '';
+  document.getElementById('tToLocation').value = '';
+  document.getElementById('tPartyName').value = '';
+  document.getElementById('tDate').value = todayStr();
+  document.getElementById('transferStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('transferModal');
+}
+async function submitTransfer() {
+  const msgEl = document.getElementById('transferStatusMsg');
+  const vin = document.getElementById('tVin').value;
+  const fromLoc = document.getElementById('tFromLocation').value;
+  const toLoc = document.getElementById('tToLocation').value;
+  if (!fromLoc || !toLoc) { showMsg(msgEl, 'From and To locations are required.', 'error'); return; }
+  if (fromLoc === toLoc) { showMsg(msgEl, 'From and To locations cannot be the same.', 'error'); return; }
+
+  const res = await apiCall('addTransfer', {
+    vin: vin,
+    transferType: document.getElementById('tType').value,
+    fromLocation: fromLoc,
+    toLocation: toLoc,
+    partyName: document.getElementById('tPartyName').value.trim(),
+    transferDate: document.getElementById('tDate').value
+  });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('transferModal'); loadStockList(); loadDashboard(); }, 900);
   } else {
     showMsg(msgEl, res.error, 'error');
   }
