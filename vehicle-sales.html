@@ -388,6 +388,10 @@
     <div class="form-group"><label>Customer Name</label><input type="text" id="bCustomerName" placeholder="Full name"></div>
     <div class="form-group"><label>Customer Phone</label><input type="tel" id="bCustomerPhone" placeholder="10-digit mobile"></div>
     <div class="form-group"><label>Booking Date</label><input type="date" id="bDate"></div>
+    <div class="form-group">
+      <label>Assign Finance Staff (optional - leave blank for cash)</label>
+      <select id="bFinanceStaff"><option value="">-- Cash / No Finance --</option></select>
+    </div>
     <button class="btn btn-primary" onclick="submitBooking()">Confirm Booking</button>
   </div>
 </div>
@@ -410,6 +414,24 @@
     <div class="form-group"><label>Finance Company</label><select id="fCompany"></select></div>
     <div class="form-group"><label>Approved Date</label><input type="date" id="fDate"></div>
     <button class="btn btn-primary" onclick="submitFinance()">Update Finance</button>
+  </div>
+</div>
+
+<!-- ==================== FINANCE LOAN / COMMISSION MODAL ==================== -->
+<div class="modal-overlay" id="loanModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Loan &amp; Commission</h3><button class="modal-close" onclick="closeModal('loanModal')">&times;</button></div>
+    <div class="status-msg" id="loanStatusMsg"></div>
+    <input type="hidden" id="lVin">
+    <div class="form-group"><label>Finance Company</label><select id="lCompany"></select></div>
+    <div class="form-group"><label>Loan Amount (&#8377;)</label><input type="number" id="lLoanAmount" placeholder="e.g. 85000"></div>
+    <div class="form-group"><label>Commission Amount (&#8377;)</label><input type="number" id="lCommissionAmount" placeholder="e.g. 2500"></div>
+    <div class="form-group">
+      <label>Commission Status</label>
+      <select id="lCommissionStatus"><option value="pending">Pending</option><option value="settled">Settled</option></select>
+    </div>
+    <div class="form-group"><label>Commission Settled Date</label><input type="date" id="lSettledDate"></div>
+    <button class="btn btn-primary" onclick="submitFinanceLoan()">Save Loan Details</button>
   </div>
 </div>
 
@@ -475,6 +497,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbxtygNhogGV_x6g6nL8wmHh
 let currentUser = null;   // { username, fullName, role, permissions }
 let vehicleCache = [];    // last loaded stock list
 let listsCache = {};      // dropdown lists from getLists
+let financeStaffCache = []; // list of {username, fullName} for Finance-role users
 let currentFilter = 'all';
 let vehicleEntryCount = 0;
 
@@ -575,6 +598,15 @@ async function enterApp() {
     // Non-fatal: dropdowns will just be empty until retried; app still usable.
   }
 
+  try {
+    const staffRes = await apiCall('getFinanceStaffList');
+    if (staffRes.success) {
+      financeStaffCache = staffRes.staff || [];
+    }
+  } catch (e) {
+    console.error('getFinanceStaffList failed:', e);
+  }
+
   showScreen('dashboard');
   loadDashboard();
 }
@@ -628,6 +660,7 @@ function todayStr() {
 function populateDropdowns() {
   fillSelect('fCompany', listsCache.FinanceCompanies || []);
   fillSelect('iCompany', listsCache.InsuranceCompanies || []);
+  fillSelect('lCompany', listsCache.FinanceCompanies || []);
 }
 function fillSelect(id, options) {
   const el = document.getElementById(id);
@@ -1012,6 +1045,7 @@ function renderDetail(v, timeline) {
   }
   if (status !== 'stock' && status !== 'delivered' && status !== 'returned') {
     if (can('finance')) actionsHtml += `<button class="btn btn-secondary" onclick="openFinanceModal('${v.VIN}')">Update Finance</button>`;
+    if (can('financeloan')) actionsHtml += `<button class="btn btn-secondary" onclick="openLoanModal('${v.VIN}')">Loan &amp; Commission</button>`;
     if (can('insurance')) actionsHtml += `<button class="btn btn-secondary" onclick="openInsuranceModal('${v.VIN}')">Update Insurance</button>`;
     if (can('rto')) actionsHtml += `<button class="btn btn-secondary" onclick="openRTOModal('${v.VIN}')">Update RTO</button>`;
     if (can('delivery')) actionsHtml += `<button class="btn btn-primary" onclick="openDeliveryModal('${v.VIN}')">Mark Delivered</button>`;
@@ -1059,6 +1093,11 @@ function openBookingModal(vin) {
   document.getElementById('bCustomerPhone').value = '';
   document.getElementById('bDate').value = todayStr();
   document.getElementById('bookingStatusMsg').style.display = 'none';
+
+  const staffSelect = document.getElementById('bFinanceStaff');
+  staffSelect.innerHTML = '<option value="">-- Cash / No Finance --</option>' +
+    financeStaffCache.map(s => `<option value="${s.username}">${s.fullName}</option>`).join('');
+
   closeModal('detailModal');
   openModal('bookingModal');
 }
@@ -1068,9 +1107,10 @@ async function submitBooking() {
   const name = document.getElementById('bCustomerName').value.trim();
   const phone = document.getElementById('bCustomerPhone').value.trim();
   const date = document.getElementById('bDate').value;
+  const financeStaff = document.getElementById('bFinanceStaff').value;
   if (!name || !phone || !date) { showMsg(msgEl, 'All fields are required.', 'error'); return; }
 
-  const res = await apiCall('addBooking', { vin: vin, customerName: name, customerPhone: phone, bookingDate: date });
+  const res = await apiCall('addBooking', { vin: vin, customerName: name, customerPhone: phone, bookingDate: date, assignedFinanceStaff: financeStaff });
   if (res.success) {
     showMsg(msgEl, res.message, 'success');
     setTimeout(() => { closeModal('bookingModal'); loadStockList(); loadDashboard(); }, 900);
@@ -1101,6 +1141,37 @@ async function submitFinance() {
   if (res.success) {
     showMsg(msgEl, res.message, 'success');
     setTimeout(() => { closeModal('financeModal'); loadStockList(); loadDashboard(); }, 900);
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== FINANCE LOAN / COMMISSION ====================
+function openLoanModal(vin) {
+  document.getElementById('lVin').value = vin;
+  document.getElementById('lCompany').value = '';
+  document.getElementById('lLoanAmount').value = '';
+  document.getElementById('lCommissionAmount').value = '';
+  document.getElementById('lCommissionStatus').value = 'pending';
+  document.getElementById('lSettledDate').value = '';
+  document.getElementById('loanStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('loanModal');
+}
+async function submitFinanceLoan() {
+  const msgEl = document.getElementById('loanStatusMsg');
+  const vin = document.getElementById('lVin').value;
+  const res = await apiCall('updateFinanceLoan', {
+    vin: vin,
+    financeCompany: document.getElementById('lCompany').value,
+    loanAmount: document.getElementById('lLoanAmount').value,
+    commissionAmount: document.getElementById('lCommissionAmount').value,
+    commissionStatus: document.getElementById('lCommissionStatus').value,
+    commissionSettledDate: document.getElementById('lSettledDate').value
+  });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+    setTimeout(() => { closeModal('loanModal'); loadStockList(); loadDashboard(); }, 900);
   } else {
     showMsg(msgEl, res.error, 'error');
   }
