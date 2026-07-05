@@ -130,6 +130,16 @@
   .sub-chip.done { background: #dcfce7; color: #166534; }
   .sub-chip.rejected { background: #fee2e2; color: #991b1b; }
 
+  .doc-item {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .doc-item-name { font-size: 13px; font-weight: 600; }
+  .doc-toggle-btn { padding: 7px 14px; border-radius: 8px; border: none; font-size: 12px; font-weight: 700; }
+  .doc-toggle-btn.ready { background: var(--done); color: #fff; }
+  .doc-toggle-btn.pending { background: #f1f5f9; color: var(--text-light); }
+
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
   .empty-state .icon { font-size: 40px; margin-bottom: 10px; }
 
@@ -255,6 +265,7 @@
     <div class="section-title">Quick Links</div>
     <div style="display:flex; flex-direction:column; gap:8px;">
       <button class="btn btn-secondary" onclick="showScreen('reports')" id="quickLinkReports" style="display:none;">Reports</button>
+      <button class="btn btn-secondary" onclick="showScreen('bulkUpload')" id="quickLinkBulkUpload" style="display:none;">Bulk Purchase Upload</button>
     </div>
 
     <button class="btn btn-secondary" onclick="loadDashboard()" style="margin-top:14px;">Refresh</button>
@@ -300,6 +311,18 @@
       <button class="btn btn-primary" onclick="runReport('list')">List</button>
     </div>
     <div id="reportResultContainer" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- ===== BULK PURCHASE UPLOAD SCREEN (Admin) ===== -->
+  <div id="bulkUploadScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">Bulk Purchase Upload</div>
+    <button class="btn btn-secondary" onclick="downloadPurchaseTemplate()">Download CSV Template</button>
+    <div class="form-group" style="margin-top:16px;">
+      <label>Upload Filled CSV File</label>
+      <input type="file" id="bulkCsvFile" accept=".csv" style="padding:8px; border:1.5px solid var(--border); border-radius:8px; width:100%;">
+    </div>
+    <button class="btn btn-primary" onclick="processBulkUpload()">Upload &amp; Process</button>
+    <div id="bulkUploadResult" style="margin-top:14px;"></div>
   </div>
 
   <!-- ===== STOCK LIST SCREEN ===== -->
@@ -489,6 +512,8 @@
     <div class="status-msg" id="deliveryStatusMsg"></div>
     <input type="hidden" id="dVin">
     <div class="form-group"><label>Delivery Date</label><input type="date" id="dDate"></div>
+    <div class="form-group"><label>Hero DMS Invoice Number</label><input type="text" id="dDmsInvoiceNumber" placeholder="e.g. DMS-2026-4521"></div>
+    <div class="form-group"><label>Hero DMS Invoice Date</label><input type="date" id="dDmsInvoiceDate"></div>
     <button class="btn btn-primary" onclick="submitDelivery()">Confirm Delivery</button>
   </div>
 </div>
@@ -520,6 +545,24 @@
     <div class="form-group"><label>Party / Received By (optional)</label><input type="text" id="tPartyName" placeholder="e.g. Branch manager, dealer name"></div>
     <div class="form-group"><label>Transfer Date</label><input type="date" id="tDate"></div>
     <button class="btn btn-primary" onclick="submitTransfer()">Confirm Transfer</button>
+  </div>
+</div>
+
+<!-- ==================== DOCUMENTS & CAMPAIGN MODAL ==================== -->
+<div class="modal-overlay" id="documentsModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Documents &amp; Campaign</h3><button class="modal-close" onclick="closeModal('documentsModal')">&times;</button></div>
+    <div class="status-msg" id="documentsStatusMsg"></div>
+    <input type="hidden" id="docVin">
+
+    <div class="form-group">
+      <label>Campaign / Offer</label>
+      <input type="text" id="docCampaignOffer" placeholder="e.g. Monsoon Offer 2026">
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="submitCampaignOffer()">Save Campaign</button>
+    </div>
+
+    <div class="section-title" style="margin-top:16px;">Document Checklist</div>
+    <div id="documentChecklistContainer"><div class="loading-spinner">Loading...</div></div>
   </div>
 </div>
 
@@ -652,6 +695,7 @@ function applyRolePermissions() {
   document.getElementById('navHistory').style.display = perms.indexOf('history') !== -1 ? 'flex' : 'none';
   document.getElementById('navDashboard').style.display = perms.indexOf('dashboard') !== -1 ? 'flex' : 'none';
   document.getElementById('quickLinkReports').style.display = perms.indexOf('reports') !== -1 ? 'block' : 'none';
+  document.getElementById('quickLinkBulkUpload').style.display = currentUser.role === 'Admin' ? 'block' : 'none';
 }
 
 function can(action) {
@@ -1153,6 +1197,9 @@ function renderDetail(v, timeline) {
   if (status !== 'delivered' && status !== 'returned' && can('transfer')) {
     actionsHtml += `<button class="btn btn-secondary" onclick="openTransferModal('${v.VIN}')">Transfer Location</button>`;
   }
+  if (status !== 'stock' && status !== 'returned' && can('documents')) {
+    actionsHtml += `<button class="btn btn-secondary" onclick="openDocumentsModal('${v.VIN}')">Documents &amp; Campaign</button>`;
+  }
 
   const timelineHtml = timeline.length === 0 ? '<div class="empty-state">No history yet.</div>' :
     timeline.slice().reverse().map(t => `
@@ -1352,6 +1399,8 @@ async function submitRTO() {
 function openDeliveryModal(vin) {
   document.getElementById('dVin').value = vin;
   document.getElementById('dDate').value = todayStr();
+  document.getElementById('dDmsInvoiceNumber').value = '';
+  document.getElementById('dDmsInvoiceDate').value = '';
   document.getElementById('deliveryStatusMsg').style.display = 'none';
   closeModal('detailModal');
   openModal('deliveryModal');
@@ -1359,7 +1408,12 @@ function openDeliveryModal(vin) {
 async function submitDelivery() {
   const msgEl = document.getElementById('deliveryStatusMsg');
   const vin = document.getElementById('dVin').value;
-  const res = await apiCall('markDelivered', { vin: vin, deliveryDate: document.getElementById('dDate').value });
+  const res = await apiCall('markDelivered', {
+    vin: vin,
+    deliveryDate: document.getElementById('dDate').value,
+    dmsInvoiceNumber: document.getElementById('dDmsInvoiceNumber').value.trim(),
+    dmsInvoiceDate: document.getElementById('dDmsInvoiceDate').value
+  });
   if (res.success) {
     showMsg(msgEl, res.message, 'success');
     setTimeout(() => { closeModal('deliveryModal'); loadStockList(); loadDashboard(); }, 900);
@@ -1425,6 +1479,126 @@ async function submitTransfer() {
     setTimeout(() => { closeModal('transferModal'); loadStockList(); loadDashboard(); }, 900);
   } else {
     showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== DOCUMENTS & CAMPAIGN ====================
+async function openDocumentsModal(vin) {
+  document.getElementById('docVin').value = vin;
+  document.getElementById('docCampaignOffer').value = '';
+  document.getElementById('documentsStatusMsg').style.display = 'none';
+  closeModal('detailModal');
+  openModal('documentsModal');
+  await loadDocumentChecklist(vin);
+}
+
+async function loadDocumentChecklist(vin) {
+  const container = document.getElementById('documentChecklistContainer');
+  container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+
+  const docTypes = listsCache.DocumentTypes || ['Sales Invoice', 'Insurance Copy', 'Exchange Vehicle RC Copy'];
+  const res = await apiCall('getDocumentChecklist', { vin: vin });
+  const existingItems = res.success ? (res.items || []) : [];
+
+  const statusMap = {};
+  existingItems.forEach(item => { statusMap[item.DocumentType] = item.Status; });
+
+  container.innerHTML = docTypes.map(docType => {
+    const status = statusMap[docType] || 'pending';
+    return `
+      <div class="doc-item">
+        <span class="doc-item-name">${docType}</span>
+        <button class="doc-toggle-btn ${status}" onclick="toggleDocumentStatus('${vin}', '${docType.replace(/'/g, "\\'")}', '${status}')">
+          ${status === 'ready' ? 'Ready \u2713' : 'Pending'}
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function toggleDocumentStatus(vin, docType, currentStatus) {
+  const newStatus = currentStatus === 'ready' ? 'pending' : 'ready';
+  const res = await apiCall('updateDocumentChecklist', { vin: vin, documentType: docType, status: newStatus });
+  if (res.success) {
+    await loadDocumentChecklist(vin);
+  } else {
+    alert(res.error);
+  }
+}
+
+async function submitCampaignOffer() {
+  const msgEl = document.getElementById('documentsStatusMsg');
+  const vin = document.getElementById('docVin').value;
+  const campaignOffer = document.getElementById('docCampaignOffer').value.trim();
+
+  const res = await apiCall('updateCampaignOffer', { vin: vin, campaignOffer: campaignOffer });
+  if (res.success) {
+    showMsg(msgEl, res.message, 'success');
+  } else {
+    showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== BULK PURCHASE UPLOAD (CSV) ====================
+const BULK_CSV_HEADERS = ['vin', 'engineNumber', 'model', 'variant', 'color', 'purchaseInvoiceNo', 'purchaseDate', 'supplierName', 'initialLocation'];
+
+function downloadPurchaseTemplate() {
+  const headerRow = BULK_CSV_HEADERS.join(',');
+  const sampleRow = 'MBLXXXXXXXXXXXXXX,ENG12345,Splendor Plus,Standard,Red,INV1001,2026-07-05,Hero MotoCorp Ltd,Showroom';
+  const csvContent = headerRow + '\n' + sampleRow;
+
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'salesops_purchase_template.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim());
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function processBulkUpload() {
+  const fileInput = document.getElementById('bulkCsvFile');
+  const resultEl = document.getElementById('bulkUploadResult');
+
+  if (!fileInput.files || fileInput.files.length === 0) {
+    resultEl.innerHTML = '<div class="status-msg error" style="display:block;">Please select a CSV file first.</div>';
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const text = await file.text();
+  const rows = parseCSV(text);
+
+  if (rows.length === 0) {
+    resultEl.innerHTML = '<div class="status-msg error" style="display:block;">No data rows found in the file.</div>';
+    return;
+  }
+
+  resultEl.innerHTML = '<div class="loading-spinner">Uploading ' + rows.length + ' row(s)...</div>';
+
+  const res = await apiCall('addBulkPurchase', { rows: rows });
+  if (res.success) {
+    resultEl.innerHTML = `<div class="status-msg success" style="display:block;">${res.message}</div>`;
+    fileInput.value = '';
+    loadDashboard();
+  } else {
+    resultEl.innerHTML = `<div class="status-msg error" style="display:block;">${res.error}</div>`;
   }
 }
 
