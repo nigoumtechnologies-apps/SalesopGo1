@@ -225,8 +225,20 @@
     pointer-events: none;
   }
   @keyframes flashFade { from { opacity: 1; } to { opacity: 0; } }
+
+  .capture-header {
+    background: var(--primary); color: #fff; padding: 16px; text-align: center;
+  }
+  .capture-header .cap-title { font-size: 17px; font-weight: 800; }
+  .capture-header .cap-date { font-size: 12px; opacity: 0.9; margin-top: 3px; }
+  .capture-footer {
+    background: #f1f5f9; padding: 12px 16px; text-align: center; border-top: 1px solid var(--border);
+  }
+  .capture-footer .cap-prepared { font-size: 11px; color: var(--text-light); }
+  .capture-body { padding: 12px; background: #fff; }
 </style>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -412,6 +424,7 @@
   </div>
 
   <button class="fab" id="addPurchaseFab" onclick="openAddPurchaseModal()">+</button>
+  <button class="fab" id="shareScreenFab" onclick="openShareScreenModal()" style="background:#16a34a; bottom:148px;" title="Save/Share this screen">&#128247;</button>
 </div>
 
 <!-- ==================== ADD PURCHASE MODAL ==================== -->
@@ -643,6 +656,23 @@
     <button class="btn btn-danger" style="margin-top:12px;" onclick="deleteCurrentPhoto()">Delete Photo</button>
   </div>
 </div>
+
+<!-- ==================== SHARE SCREEN MODAL ==================== -->
+<div class="modal-overlay" id="shareScreenModal">
+  <div class="modal-sheet" style="padding:12px;">
+    <div class="modal-header"><h3>Share Screen</h3><button class="modal-close" onclick="closeModal('shareScreenModal')">&times;</button></div>
+    <div id="shareScreenPreviewWrap" style="max-height:60vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+      <div class="loading-spinner">Preparing image...</div>
+    </div>
+    <div class="action-row" style="margin-top:12px;">
+      <button class="btn btn-secondary" onclick="downloadShareScreenImage()">Save as JPG</button>
+      <button class="btn btn-primary" onclick="shareToWhatsApp()">Share to WhatsApp</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden off-screen container used to build the capture (screen content + header/footer) -->
+<div id="captureBuildArea" style="position:fixed; left:-9999px; top:0; width:390px; background:#fff;"></div>
 
 <script>
 // ==================== CONFIG ====================
@@ -1125,12 +1155,15 @@ function renderVehicleCard(v) {
   const insuranceChip = v.InsuranceStatus ? `<span class="sub-chip ${subChipClass(v.InsuranceStatus, 'done')}">Insurance: ${v.InsuranceStatus}</span>` : '';
   const rtoChip = v.RTOStatus ? `<span class="sub-chip ${subChipClass(v.RTOStatus, 'done')}">RTO: ${v.RTOStatus}</span>` : '';
   const locationLine = v.CurrentLocation ? `<div class="vc-model">&#128205; ${v.CurrentLocation}</div>` : '';
+  const photoIcon = v.hasPhotos
+    ? `<span onclick="event.stopPropagation(); openPhotosModal('${v.VIN}')" style="font-size:16px; cursor:pointer;" title="View photos">&#128247;</span>`
+    : '';
 
   return `
     <div class="vehicle-card status-${status}" onclick="openVehicleDetail('${v.VIN}')">
       <div class="vc-top">
         <div>
-          <div class="vc-vin">${v.VIN}</div>
+          <div class="vc-vin">${v.VIN} ${photoIcon}</div>
           <div class="vc-model">${v.Model || ''} ${v.Variant || ''} &middot; ${v.Color || ''}</div>
           ${locationLine}
         </div>
@@ -2038,6 +2071,126 @@ async function searchVinHistory() {
     <div class="section-title">Full Timeline (${timeline.length} entries)</div>
     ${timelineHtml}
   `;
+}
+
+// ==================== SCREEN SHARE (JPG + WhatsApp) ====================
+const SCREEN_TITLES = {
+  dashboard: 'Dashboard Summary',
+  stock: 'Vehicle Stock List',
+  history: 'Vehicle History',
+  reports: 'Transaction Report',
+  insurancePending: 'Insurance Pending List',
+  rtoPending: 'RTO Pending List',
+  financePending: 'Finance Pending List',
+  bulkUpload: 'Bulk Purchase Upload',
+  auditSetup: 'Stock Audit',
+  auditScan: 'Stock Audit - Live Scan',
+  auditResults: 'Stock Audit Results'
+};
+
+let currentCaptureBlob = null;
+
+function getCurrentScreenName() {
+  const activeScreen = document.querySelector('.screen.active');
+  if (!activeScreen) return 'dashboard';
+  return activeScreen.id.replace('Screen', '');
+}
+
+async function openShareScreenModal() {
+  openModal('shareScreenModal');
+  const previewWrap = document.getElementById('shareScreenPreviewWrap');
+  previewWrap.innerHTML = '<div class="loading-spinner">Preparing image...</div>';
+
+  try {
+    const canvas = await buildScreenCaptureCanvas();
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    previewWrap.innerHTML = `<img src="${dataUrl}" style="width:100%; display:block;">`;
+
+    // Convert to Blob for sharing (Web Share API needs a File/Blob, not a data URL)
+    canvas.toBlob(blob => { currentCaptureBlob = blob; }, 'image/jpeg', 0.92);
+  } catch (err) {
+    previewWrap.innerHTML = `<div class="status-msg error" style="display:block;">Failed to capture screen: ${err.message}</div>`;
+  }
+}
+
+async function buildScreenCaptureCanvas() {
+  const screenName = getCurrentScreenName();
+  const title = SCREEN_TITLES[screenName] || 'SalesOps Report';
+  const activeScreen = document.querySelector('.screen.active');
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+  const buildArea = document.getElementById('captureBuildArea');
+  buildArea.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'capture-header';
+  header.innerHTML = `<div class="cap-title">${title}</div><div class="cap-date">Ayyappan Agency &middot; ${dateStr}</div>`;
+  wrapper.appendChild(header);
+
+  // Body - clone the active screen's content, stripping interactive elements that
+  // don't make sense in a static image (buttons, inputs, the share/add FABs)
+  const body = document.createElement('div');
+  body.className = 'capture-body';
+  const clone = activeScreen.cloneNode(true);
+  clone.querySelectorAll('button, input, select, textarea, .loading-spinner').forEach(el => el.remove());
+  body.appendChild(clone);
+  wrapper.appendChild(body);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.className = 'capture-footer';
+  footer.innerHTML = `<div class="cap-prepared">Prepared by ${currentUser.fullName} (${currentUser.role}) &middot; ${dateStr} ${timeStr}</div>`;
+  wrapper.appendChild(footer);
+
+  buildArea.appendChild(wrapper);
+
+  // Give the browser a moment to lay out images/fonts before capturing
+  await new Promise(resolve => setTimeout(resolve, 200));
+
+  const canvas = await html2canvas(wrapper, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+  buildArea.innerHTML = ''; // clean up
+  return canvas;
+}
+
+function downloadShareScreenImage() {
+  if (!currentCaptureBlob) { alert('Image not ready yet, please wait a moment.'); return; }
+  const url = URL.createObjectURL(currentCaptureBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `SalesOps_${getCurrentScreenName()}_${Date.now()}.jpg`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function shareToWhatsApp() {
+  if (!currentCaptureBlob) { alert('Image not ready yet, please wait a moment.'); return; }
+
+  const fileName = `SalesOps_${getCurrentScreenName()}_${Date.now()}.jpg`;
+  const file = new File([currentCaptureBlob], fileName, { type: 'image/jpeg' });
+
+  // Web Share API (Level 2, file sharing) works on most Android Chrome browsers and
+  // opens the native share sheet where WhatsApp appears as an option directly.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: SCREEN_TITLES[getCurrentScreenName()] || 'SalesOps' });
+    } catch (err) {
+      // User cancelled the share sheet - not an error, no action needed.
+    }
+  } else {
+    // Fallback: download the image and open WhatsApp separately, since older browsers
+    // can't attach files via a URL scheme - WhatsApp has no public API for pre-attaching images.
+    downloadShareScreenImage();
+    alert('Your browser doesn\'t support direct image sharing. The image has been downloaded - please attach it manually in WhatsApp.');
+    window.open('https://wa.me/', '_blank');
+  }
 }
 
 // ==================== INIT ====================
