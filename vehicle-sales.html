@@ -1087,7 +1087,7 @@ function formatTimestamp(ts) {
 }
 
 // ==================== BOOKING ====================
-function openBookingModal(vin) {
+async function openBookingModal(vin) {
   document.getElementById('bVin').value = vin;
   document.getElementById('bCustomerName').value = '';
   document.getElementById('bCustomerPhone').value = '';
@@ -1095,11 +1095,23 @@ function openBookingModal(vin) {
   document.getElementById('bookingStatusMsg').style.display = 'none';
 
   const staffSelect = document.getElementById('bFinanceStaff');
-  staffSelect.innerHTML = '<option value="">-- Cash / No Finance --</option>' +
-    financeStaffCache.map(s => `<option value="${s.username}">${s.fullName}</option>`).join('');
+  staffSelect.innerHTML = '<option value="">Loading staff list...</option>';
 
   closeModal('detailModal');
   openModal('bookingModal');
+
+  // Refresh live each time the modal opens - never relies solely on the login-time cache
+  try {
+    const staffRes = await apiCall('getFinanceStaffList');
+    if (staffRes.success) {
+      financeStaffCache = staffRes.staff || [];
+    }
+  } catch (e) {
+    console.error('getFinanceStaffList failed:', e);
+  }
+
+  staffSelect.innerHTML = '<option value="">-- Cash / No Finance --</option>' +
+    financeStaffCache.map(s => `<option value="${s.username}">${s.fullName}</option>`).join('');
 }
 async function submitBooking() {
   const msgEl = document.getElementById('bookingStatusMsg');
