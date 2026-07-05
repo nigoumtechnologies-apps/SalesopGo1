@@ -249,6 +249,9 @@
     <div class="section-title">Model-wise Available Stock</div>
     <div id="modelWiseStockContainer"><div class="loading-spinner">Loading...</div></div>
 
+    <div class="section-title">Location-wise Available Stock</div>
+    <div id="locationWiseStockContainer"><div class="loading-spinner">Loading...</div></div>
+
     <div class="section-title">Quick Links</div>
     <div style="display:flex; flex-direction:column; gap:8px;">
       <button class="btn btn-secondary" onclick="showScreen('reports')" id="quickLinkReports" style="display:none;">Reports</button>
@@ -301,6 +304,10 @@
 
   <!-- ===== STOCK LIST SCREEN ===== -->
   <div id="stockScreen" class="screen">
+    <div id="extraFilterBanner" style="display:none; background:#eef2ff; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
+      <span id="extraFilterLabel"></span>
+      <button onclick="clearExtraFilter()" style="background:none; border:none; color:var(--primary); font-weight:700; font-size:12px;">Clear &times;</button>
+    </div>
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="Search VIN, Model, Customer..." oninput="renderStockList()">
     </div>
@@ -525,6 +532,7 @@ let vehicleCache = [];    // last loaded stock list
 let listsCache = {};      // dropdown lists from getLists
 let financeStaffCache = []; // list of {username, fullName} for Finance-role users
 let currentFilter = 'all';
+let extraFilter = null; // { type: 'model'|'location', value: '...' } - set when drilling down from Dashboard
 let vehicleEntryCount = 0;
 
 // ==================== API HELPER ====================
@@ -710,6 +718,7 @@ async function loadDashboard() {
   document.getElementById('statPendingRTO').textContent = res.pendingRTO;
 
   loadModelWiseStock();
+  loadLocationWiseStock();
 }
 
 async function loadModelWiseStock() {
@@ -725,11 +734,45 @@ async function loadModelWiseStock() {
     return;
   }
   container.innerHTML = list.map(m => `
-    <div class="detail-row" style="background:#fff; border-radius:8px; padding:10px 12px; margin-bottom:6px; border-bottom:none; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+    <div class="detail-row" style="background:#fff; border-radius:8px; padding:10px 12px; margin-bottom:6px; border-bottom:none; box-shadow:0 1px 3px rgba(0,0,0,0.06); cursor:pointer;" onclick="drillDownToStock('model', '${m.model.replace(/'/g, "\\'")}')">
       <span class="lbl">${m.model}</span>
       <span class="val">${m.count}</span>
     </div>
   `).join('');
+}
+
+async function loadLocationWiseStock() {
+  const container = document.getElementById('locationWiseStockContainer');
+  const res = await apiCall('getLocationWiseStock');
+  if (!res.success) {
+    container.innerHTML = '<div class="empty-state">' + (res.error || 'Failed to load') + '</div>';
+    return;
+  }
+  const list = res.locationWiseStock || [];
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty-state">No stock available.</div>';
+    return;
+  }
+  container.innerHTML = list.map(l => `
+    <div class="detail-row" style="background:#fff; border-radius:8px; padding:10px 12px; margin-bottom:6px; border-bottom:none; box-shadow:0 1px 3px rgba(0,0,0,0.06); cursor:pointer;" onclick="drillDownToStock('location', '${l.location.replace(/'/g, "\\'")}')">
+      <span class="lbl">&#128205; ${l.location}</span>
+      <span class="val">${l.count}</span>
+    </div>
+  `).join('');
+}
+
+function drillDownToStock(type, value) {
+  extraFilter = { type: type, value: value };
+  currentFilter = 'stock'; // model/location cards represent available stock counts specifically
+  showScreen('stock');
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  const stockChip = document.querySelector('.filter-chip[data-status="stock"]');
+  if (stockChip) stockChip.classList.add('active');
+}
+
+function clearExtraFilter() {
+  extraFilter = null;
+  renderStockList();
 }
 
 // ==================== INSURANCE / RTO / FINANCE PENDING LISTS ====================
@@ -881,6 +924,7 @@ async function loadStockList() {
 
 function setFilter(status) {
   currentFilter = status;
+  extraFilter = null; // manual chip selection overrides any Dashboard drill-down filter
   document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
   document.querySelector(`.filter-chip[data-status="${status}"]`).classList.add('active');
   renderStockList();
@@ -889,6 +933,15 @@ function setFilter(status) {
 function renderStockList() {
   const search = (document.getElementById('searchInput').value || '').trim().toLowerCase();
   let list = vehicleCache;
+
+  const banner = document.getElementById('extraFilterBanner');
+  if (extraFilter) {
+    document.getElementById('extraFilterLabel').textContent =
+      (extraFilter.type === 'model' ? 'Model: ' : 'Location: ') + extraFilter.value;
+    banner.style.display = 'flex';
+  } else {
+    banner.style.display = 'none';
+  }
 
   if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
     list = list.filter(v => v.CurrentStatus === currentFilter);
@@ -904,6 +957,14 @@ function renderStockList() {
       && v.RTOStatus !== 'done');
   }
   // currentFilter === 'all' -> no filtering
+
+  if (extraFilter) {
+    if (extraFilter.type === 'model') {
+      list = list.filter(v => (v.Model || '(No Model)') === extraFilter.value);
+    } else if (extraFilter.type === 'location') {
+      list = list.filter(v => (v.CurrentLocation || '(No Location Set)') === extraFilter.value);
+    }
+  }
 
   if (search) {
     list = list.filter(v =>
@@ -934,6 +995,7 @@ function renderVehicleCard(v) {
   const financeChip = v.FinanceStatus ? `<span class="sub-chip ${subChipClass(v.FinanceStatus, 'approved')}">Finance: ${v.FinanceStatus}</span>` : '';
   const insuranceChip = v.InsuranceStatus ? `<span class="sub-chip ${subChipClass(v.InsuranceStatus, 'done')}">Insurance: ${v.InsuranceStatus}</span>` : '';
   const rtoChip = v.RTOStatus ? `<span class="sub-chip ${subChipClass(v.RTOStatus, 'done')}">RTO: ${v.RTOStatus}</span>` : '';
+  const locationLine = v.CurrentLocation ? `<div class="vc-model">&#128205; ${v.CurrentLocation}</div>` : '';
 
   return `
     <div class="vehicle-card status-${status}" onclick="openVehicleDetail('${v.VIN}')">
@@ -941,6 +1003,7 @@ function renderVehicleCard(v) {
         <div>
           <div class="vc-vin">${v.VIN}</div>
           <div class="vc-model">${v.Model || ''} ${v.Variant || ''} &middot; ${v.Color || ''}</div>
+          ${locationLine}
         </div>
         <span class="vc-status-badge ${status}">${status}</span>
       </div>
