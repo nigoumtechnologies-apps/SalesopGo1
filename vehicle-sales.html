@@ -609,6 +609,41 @@
   </div>
 </div>
 
+<!-- ==================== VEHICLE PHOTOS MODAL ==================== -->
+<div class="modal-overlay" id="photosModal">
+  <div class="modal-sheet">
+    <div class="modal-header"><h3>Vehicle Photos</h3><button class="modal-close" onclick="closeModal('photosModal')">&times;</button></div>
+    <div class="status-msg" id="photosStatusMsg"></div>
+    <input type="hidden" id="photoVin">
+
+    <div class="action-row" style="margin-bottom:14px;">
+      <label class="btn btn-secondary" style="text-align:center; margin:0;">
+        &#128247; From Gallery
+        <input type="file" id="photoGalleryInput" accept="image/*" style="display:none;" onchange="handlePhotoSelected(event, '')">
+      </label>
+      <label class="btn btn-primary" style="text-align:center; margin:0;">
+        &#128248; Take Photo
+        <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handlePhotoSelected(event, '')">
+      </label>
+    </div>
+
+    <div id="photoUploadProgress"></div>
+
+    <div class="section-title" style="margin-top:8px;">Uploaded Photos</div>
+    <div id="photoGrid" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;"></div>
+  </div>
+</div>
+
+<!-- ==================== PHOTO VIEWER MODAL ==================== -->
+<div class="modal-overlay" id="photoViewerModal">
+  <div class="modal-sheet" style="padding:12px;">
+    <div class="modal-header"><h3>Photo</h3><button class="modal-close" onclick="closeModal('photoViewerModal')">&times;</button></div>
+    <img id="photoViewerImg" style="width:100%; border-radius:10px;">
+    <div class="timeline-meta" id="photoViewerMeta" style="margin-top:8px;"></div>
+    <button class="btn btn-danger" style="margin-top:12px;" onclick="deleteCurrentPhoto()">Delete Photo</button>
+  </div>
+</div>
+
 <script>
 // ==================== CONFIG ====================
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxtygNhogGV_x6g6nL8wmHhRpGk5JTZZ5Y2E1tnFCv1iTocjUeb9tuPSsEtr__15I1X3w/exec';
@@ -1250,6 +1285,9 @@ function renderDetail(v, timeline) {
   if (status !== 'stock' && status !== 'returned' && can('documents')) {
     actionsHtml += `<button class="btn btn-secondary" onclick="openDocumentsModal('${v.VIN}')">Documents &amp; Campaign</button>`;
   }
+  if (can('documents')) {
+    actionsHtml += `<button class="btn btn-secondary" onclick="openPhotosModal('${v.VIN}')">Vehicle Photos</button>`;
+  }
 
   const timelineHtml = timeline.length === 0 ? '<div class="empty-state">No history yet.</div>' :
     timeline.slice().reverse().map(t => `
@@ -1586,6 +1624,129 @@ async function submitCampaignOffer() {
     showMsg(msgEl, res.message, 'success');
   } else {
     showMsg(msgEl, res.error, 'error');
+  }
+}
+
+// ==================== VEHICLE PHOTOS ====================
+let currentPhotosVin = null;
+let photoCache = [];
+let currentViewingPhotoRefNo = null;
+
+function openPhotosModal(vin) {
+  currentPhotosVin = vin;
+  document.getElementById('photoVin').value = vin;
+  document.getElementById('photosStatusMsg').style.display = 'none';
+  document.getElementById('photoUploadProgress').innerHTML = '';
+  document.getElementById('photoGalleryInput').value = '';
+  document.getElementById('photoCameraInput').value = '';
+  closeModal('detailModal');
+  openModal('photosModal');
+  loadVehiclePhotos(vin);
+}
+
+async function loadVehiclePhotos(vin) {
+  const grid = document.getElementById('photoGrid');
+  grid.innerHTML = '<div class="loading-spinner">Loading...</div>';
+  const res = await apiCall('getVehiclePhotos', { vin: vin });
+  if (!res.success) {
+    grid.innerHTML = `<div class="empty-state">${res.error}</div>`;
+    return;
+  }
+  photoCache = res.photos || [];
+  renderPhotoGrid();
+}
+
+function renderPhotoGrid() {
+  const grid = document.getElementById('photoGrid');
+  if (photoCache.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">No photos yet.</div>';
+    return;
+  }
+  grid.innerHTML = photoCache.map(p => `
+    <img src="${p.PhotoURL}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:8px; cursor:pointer;" onclick="viewPhoto('${p.RefNo}')">
+  `).join('');
+}
+
+// Resizes and compresses an image file client-side before upload, since phone camera
+// photos can be 3-8MB - well beyond what's needed for a reference photo, and large
+// uploads are slow on mobile data and consume Drive storage unnecessarily.
+function resizeImageFile(file, maxDimension) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDimension) {
+          height = height * (maxDimension / width);
+          width = maxDimension;
+        } else if (height > maxDimension) {
+          width = width * (maxDimension / height);
+          height = maxDimension;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handlePhotoSelected(event, photoStage) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const progressEl = document.getElementById('photoUploadProgress');
+  progressEl.innerHTML = '<div class="loading-spinner">Compressing and uploading...</div>';
+
+  try {
+    const resizedDataUrl = await resizeImageFile(file, 1280);
+    const res = await apiCall('uploadVehiclePhoto', {
+      vin: currentPhotosVin,
+      base64Data: resizedDataUrl,
+      photoStage: photoStage,
+      mimeType: 'image/jpeg'
+    });
+
+    if (res.success) {
+      progressEl.innerHTML = '<div class="status-msg success" style="display:block;">Photo uploaded.</div>';
+      loadVehiclePhotos(currentPhotosVin);
+    } else {
+      progressEl.innerHTML = `<div class="status-msg error" style="display:block;">${res.error}</div>`;
+    }
+  } catch (err) {
+    progressEl.innerHTML = `<div class="status-msg error" style="display:block;">Failed to process image: ${err.message}</div>`;
+  }
+
+  event.target.value = '';
+}
+
+function viewPhoto(refNo) {
+  const photo = photoCache.find(p => p.RefNo === refNo);
+  if (!photo) return;
+  currentViewingPhotoRefNo = refNo;
+  document.getElementById('photoViewerImg').src = photo.PhotoURL;
+  document.getElementById('photoViewerMeta').textContent =
+    `Uploaded by ${photo.UploadedBy} on ${formatTimestamp(photo.Timestamp)}` + (photo.PhotoStage ? ` \u00b7 ${photo.PhotoStage}` : '');
+  openModal('photoViewerModal');
+}
+
+async function deleteCurrentPhoto() {
+  if (!currentViewingPhotoRefNo) return;
+  if (!confirm('Delete this photo? This cannot be undone.')) return;
+
+  const res = await apiCall('deleteVehiclePhoto', { refNo: currentViewingPhotoRefNo });
+  if (res.success) {
+    closeModal('photoViewerModal');
+    loadVehiclePhotos(currentPhotosVin);
+  } else {
+    alert(res.error);
   }
 }
 
