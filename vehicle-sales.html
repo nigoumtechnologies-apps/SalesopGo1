@@ -215,6 +215,16 @@
   .timeline-meta { font-size: 11px; color: var(--text-light); }
 
   .loading-spinner { text-align: center; padding: 30px; color: var(--text-light); font-size: 13px; }
+
+  #qrReader.scan-flash::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    animation: flashFade 0.3s ease-out;
+    pointer-events: none;
+  }
+  @keyframes flashFade { from { opacity: 1; } to { opacity: 0; } }
 </style>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
@@ -344,7 +354,7 @@
       <div class="detail-row"><span class="lbl">Location</span><span class="val" id="auditScanLocationLabel">-</span></div>
       <div class="detail-row"><span class="lbl">Scanned</span><span class="val" id="auditScanCountLabel">0 / 0</span></div>
     </div>
-    <div id="qrReader" style="width:100%; border-radius:12px; overflow:hidden;"></div>
+    <div id="qrReader" style="width:100%; border-radius:12px; overflow:hidden; position:relative;"></div>
     <div id="auditLastScanMsg" style="margin-top:10px;"></div>
     <div class="section-title">Scanned So Far</div>
     <div id="auditScannedList"></div>
@@ -1707,6 +1717,12 @@ async function onAuditScanSuccess(decodedText) {
   if (auditScanInProgress) return;
   auditScanInProgress = true;
 
+  // Immediate feedback (flash + beep) fires before the server call, so it feels instant
+  // even on a slow connection - the scan was physically detected right away.
+  triggerScanFlash();
+  playBeepSound();
+  const capturedPhoto = captureScanPhoto();
+
   const msgEl = document.getElementById('auditLastScanMsg');
   const res = await apiCall('recordAuditScan', {
     sessionId: auditSession.sessionId,
@@ -1718,7 +1734,7 @@ async function onAuditScanSuccess(decodedText) {
     if (res.duplicate) {
       msgEl.innerHTML = `<div class="status-msg" style="display:block; background:#fef3c7; color:#92400e;">Already scanned: ${res.vin}</div>`;
     } else {
-      auditScannedVins.push({ vin: res.vin, matched: res.matched });
+      auditScannedVins.push({ vin: res.vin, matched: res.matched, photo: capturedPhoto });
       updateAuditScanCountLabel();
       renderAuditScannedList();
       const cls = res.matched ? 'success' : 'error';
@@ -1731,11 +1747,55 @@ async function onAuditScanSuccess(decodedText) {
   setTimeout(() => { auditScanInProgress = false; }, 1200); // brief cooldown before next scan accepted
 }
 
+function triggerScanFlash() {
+  const reader = document.getElementById('qrReader');
+  reader.classList.remove('scan-flash');
+  void reader.offsetWidth; // force reflow so the animation restarts on rapid consecutive scans
+  reader.classList.add('scan-flash');
+  setTimeout(() => reader.classList.remove('scan-flash'), 300);
+}
+
+function playBeepSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.type = 'sine';
+    oscillator.frequency.value = 1200;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.12);
+  } catch (e) {
+    // Web Audio unavailable or blocked - silently skip, scan still records normally.
+  }
+}
+
+function captureScanPhoto() {
+  // Grabs a still frame from the live camera video feed at the moment of a successful
+  // scan - useful as visual proof of the vehicle's physical presence/condition during audit.
+  try {
+    const videoEl = document.querySelector('#qrReader video');
+    if (!videoEl) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoEl.videoWidth;
+    canvas.height = videoEl.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.6); // 0.6 quality keeps data size reasonable
+  } catch (e) {
+    return null;
+  }
+}
+
 function renderAuditScannedList() {
   const container = document.getElementById('auditScannedList');
   container.innerHTML = auditScannedVins.slice().reverse().map(s => `
     <div class="doc-item">
-      <span class="doc-item-name">${s.vin}</span>
+      ${s.photo ? `<img src="${s.photo}" style="width:40px; height:40px; object-fit:cover; border-radius:6px; margin-right:8px;">` : ''}
+      <span class="doc-item-name" style="flex:1;">${s.vin}</span>
       <span class="sub-chip ${s.matched ? 'done' : 'rejected'}">${s.matched ? 'Matched' : 'Not Found'}</span>
     </div>
   `).join('');
