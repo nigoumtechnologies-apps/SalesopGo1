@@ -216,6 +216,7 @@
 
   .loading-spinner { text-align: center; padding: 30px; color: var(--text-light); font-size: 13px; }
 </style>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
 
@@ -266,6 +267,7 @@
     <div style="display:flex; flex-direction:column; gap:8px;">
       <button class="btn btn-secondary" onclick="showScreen('reports')" id="quickLinkReports" style="display:none;">Reports</button>
       <button class="btn btn-secondary" onclick="showScreen('bulkUpload')" id="quickLinkBulkUpload" style="display:none;">Bulk Purchase Upload</button>
+      <button class="btn btn-secondary" onclick="showScreen('auditSetup')" id="quickLinkAudit" style="display:none;">Stock Audit (Scan)</button>
     </div>
 
     <button class="btn btn-secondary" onclick="loadDashboard()" style="margin-top:14px;">Refresh</button>
@@ -323,6 +325,37 @@
     </div>
     <button class="btn btn-primary" onclick="processBulkUpload()">Upload &amp; Process</button>
     <div id="bulkUploadResult" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- ===== STOCK AUDIT SETUP SCREEN ===== -->
+  <div id="auditSetupScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">Start Stock Audit</div>
+    <div class="form-group">
+      <label>Location to Audit</label>
+      <select id="auditLocation"><option value="">-- Select --</option></select>
+    </div>
+    <button class="btn btn-primary" onclick="startAudit()">Start Scanning</button>
+    <div id="auditSetupMsg" style="margin-top:12px;"></div>
+  </div>
+
+  <!-- ===== STOCK AUDIT LIVE SCAN SCREEN ===== -->
+  <div id="auditScanScreen" class="screen">
+    <div class="detail-header" style="margin-bottom:10px;">
+      <div class="detail-row"><span class="lbl">Location</span><span class="val" id="auditScanLocationLabel">-</span></div>
+      <div class="detail-row"><span class="lbl">Scanned</span><span class="val" id="auditScanCountLabel">0 / 0</span></div>
+    </div>
+    <div id="qrReader" style="width:100%; border-radius:12px; overflow:hidden;"></div>
+    <div id="auditLastScanMsg" style="margin-top:10px;"></div>
+    <div class="section-title">Scanned So Far</div>
+    <div id="auditScannedList"></div>
+    <button class="btn btn-danger" style="margin-top:14px;" onclick="finishAudit()">Finish Audit</button>
+  </div>
+
+  <!-- ===== STOCK AUDIT RESULTS SCREEN ===== -->
+  <div id="auditResultsScreen" class="screen">
+    <div class="section-title" style="margin-top:0;">Audit Results</div>
+    <div id="auditResultsContainer"></div>
+    <button class="btn btn-secondary" style="margin-top:14px;" onclick="showScreen('auditSetup')">Start New Audit</button>
   </div>
 
   <!-- ===== STOCK LIST SCREEN ===== -->
@@ -696,6 +729,7 @@ function applyRolePermissions() {
   document.getElementById('navDashboard').style.display = perms.indexOf('dashboard') !== -1 ? 'flex' : 'none';
   document.getElementById('quickLinkReports').style.display = perms.indexOf('reports') !== -1 ? 'block' : 'none';
   document.getElementById('quickLinkBulkUpload').style.display = currentUser.role === 'Admin' ? 'block' : 'none';
+  document.getElementById('quickLinkAudit').style.display = perms.indexOf('audit') !== -1 ? 'block' : 'none';
 }
 
 function can(action) {
@@ -704,6 +738,11 @@ function can(action) {
 
 // ==================== NAVIGATION ====================
 function showScreen(name) {
+  // Stop the camera if navigating away from the live scan screen, to avoid leaving
+  // the camera running in the background when the user moves elsewhere in the app.
+  const leavingScanScreen = document.getElementById('auditScanScreen').classList.contains('active') && name !== 'auditScan';
+  if (leavingScanScreen) stopAuditScanner();
+
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(name + 'Screen').classList.add('active');
@@ -742,6 +781,7 @@ function populateDropdowns() {
   fillSelect('pInitialLocation', listsCache.Locations || []);
   fillSelect('tFromLocation', listsCache.Locations || []);
   fillSelect('tToLocation', listsCache.Locations || []);
+  fillSelect('auditLocation', listsCache.Locations || []);
 }
 function fillSelect(id, options) {
   const el = document.getElementById(id);
@@ -1600,6 +1640,146 @@ async function processBulkUpload() {
   } else {
     resultEl.innerHTML = `<div class="status-msg error" style="display:block;">${res.error}</div>`;
   }
+}
+
+// ==================== STOCK AUDIT (QR/Barcode scanning) ====================
+let auditSession = null; // { sessionId, location, expectedCount }
+let auditScannedVins = []; // [{vin, matched}] in order scanned this session
+let auditHtml5QrCode = null;
+
+async function startAudit() {
+  const location = document.getElementById('auditLocation').value;
+  const msgEl = document.getElementById('auditSetupMsg');
+  if (!location) {
+    msgEl.innerHTML = '<div class="status-msg error" style="display:block;">Please select a location.</div>';
+    return;
+  }
+
+  msgEl.innerHTML = '<div class="loading-spinner">Starting audit session...</div>';
+  const res = await apiCall('startStockAudit', { location: location });
+  if (!res.success) {
+    msgEl.innerHTML = `<div class="status-msg error" style="display:block;">${res.error}</div>`;
+    return;
+  }
+
+  auditSession = { sessionId: res.sessionId, location: res.location, expectedCount: res.expectedCount };
+  auditScannedVins = [];
+
+  document.getElementById('auditScanLocationLabel').textContent = res.location;
+  updateAuditScanCountLabel();
+  document.getElementById('auditScannedList').innerHTML = '';
+  document.getElementById('auditLastScanMsg').innerHTML = '';
+
+  showScreen('auditScan');
+  startAuditScanner();
+}
+
+function updateAuditScanCountLabel() {
+  document.getElementById('auditScanCountLabel').textContent = auditScannedVins.length + ' / ' + auditSession.expectedCount;
+}
+
+function startAuditScanner() {
+  auditHtml5QrCode = new Html5Qrcode('qrReader');
+  const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+  auditHtml5QrCode.start(
+    { facingMode: 'environment' },
+    config,
+    onAuditScanSuccess,
+    () => { /* ignore per-frame scan failures - expected while camera searches for a code */ }
+  ).catch(err => {
+    document.getElementById('auditLastScanMsg').innerHTML =
+      `<div class="status-msg error" style="display:block;">Camera error: ${err}. Please allow camera access and reload.</div>`;
+  });
+}
+
+function stopAuditScanner() {
+  if (auditHtml5QrCode) {
+    auditHtml5QrCode.stop().catch(() => { /* already stopped, ignore */ });
+    auditHtml5QrCode = null;
+  }
+}
+
+let auditScanInProgress = false;
+async function onAuditScanSuccess(decodedText) {
+  // Prevent overlapping calls while a scan is being recorded server-side (the camera
+  // keeps firing detections rapidly on the same code before the vehicle sticker leaves frame)
+  if (auditScanInProgress) return;
+  auditScanInProgress = true;
+
+  const msgEl = document.getElementById('auditLastScanMsg');
+  const res = await apiCall('recordAuditScan', {
+    sessionId: auditSession.sessionId,
+    scannedCode: decodedText,
+    location: auditSession.location
+  });
+
+  if (res.success) {
+    if (res.duplicate) {
+      msgEl.innerHTML = `<div class="status-msg" style="display:block; background:#fef3c7; color:#92400e;">Already scanned: ${res.vin}</div>`;
+    } else {
+      auditScannedVins.push({ vin: res.vin, matched: res.matched });
+      updateAuditScanCountLabel();
+      renderAuditScannedList();
+      const cls = res.matched ? 'success' : 'error';
+      msgEl.innerHTML = `<div class="status-msg ${cls}" style="display:block;">${res.message}</div>`;
+    }
+  } else {
+    msgEl.innerHTML = `<div class="status-msg error" style="display:block;">${res.error}</div>`;
+  }
+
+  setTimeout(() => { auditScanInProgress = false; }, 1200); // brief cooldown before next scan accepted
+}
+
+function renderAuditScannedList() {
+  const container = document.getElementById('auditScannedList');
+  container.innerHTML = auditScannedVins.slice().reverse().map(s => `
+    <div class="doc-item">
+      <span class="doc-item-name">${s.vin}</span>
+      <span class="sub-chip ${s.matched ? 'done' : 'rejected'}">${s.matched ? 'Matched' : 'Not Found'}</span>
+    </div>
+  `).join('');
+}
+
+async function finishAudit() {
+  stopAuditScanner();
+  const res = await apiCall('finishStockAudit', { sessionId: auditSession.sessionId, location: auditSession.location });
+
+  showScreen('auditResults');
+  const container = document.getElementById('auditResultsContainer');
+
+  if (!res.success) {
+    container.innerHTML = `<div class="status-msg error" style="display:block;">${res.error}</div>`;
+    return;
+  }
+
+  const missingHtml = res.missing.length === 0
+    ? '<div class="empty-state"><div class="icon">&#9989;</div>Nothing missing - all expected vehicles were scanned.</div>'
+    : res.missing.map(m => `
+        <div class="doc-item">
+          <span class="doc-item-name">${m.vin}</span>
+          <span class="vc-model">${m.model || ''}</span>
+        </div>
+      `).join('');
+
+  const unexpectedHtml = res.unexpected.length === 0
+    ? '<div class="empty-state">No unexpected scans.</div>'
+    : res.unexpected.map(u => `
+        <div class="doc-item">
+          <span class="doc-item-name">${u.vin}</span>
+        </div>
+      `).join('');
+
+  container.innerHTML = `
+    <div class="stat-grid">
+      <div class="stat-card stock"><div class="num">${res.expectedCount}</div><div class="label">Expected</div></div>
+      <div class="stat-card delivered"><div class="num">${res.scannedCount}</div><div class="label">Scanned</div></div>
+    </div>
+    <div class="section-title">Missing (Expected, Not Scanned)</div>
+    ${missingHtml}
+    <div class="section-title">Unexpected (Scanned, Not Expected at ${res.location})</div>
+    ${unexpectedHtml}
+  `;
 }
 
 // ==================== VIN HISTORY SEARCH SCREEN ====================
