@@ -130,6 +130,31 @@
   .sub-chip.done { background: #dcfce7; color: #166534; }
   .sub-chip.rejected { background: #fee2e2; color: #991b1b; }
 
+  .stage-tracker { display: flex; align-items: center; margin-top: 10px; }
+  .stage-step { display: flex; flex-direction: column; align-items: center; flex: 1; }
+  .stage-dot {
+    width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid #e2e8f0;
+    background: #fff; color: #cbd5e1;
+  }
+  .stage-dot.done { background: var(--done); border-color: var(--done); color: #fff; }
+  .stage-dot.current { background: #fff; border-color: var(--primary); color: var(--primary); }
+  .stage-dot.rejected { background: var(--returned); border-color: var(--returned); color: #fff; }
+  .stage-label { font-size: 8px; color: var(--text-light); margin-top: 3px; text-align: center; }
+  .stage-line { flex: 1; height: 2px; background: #e2e8f0; margin: 0 -2px; margin-bottom: 15px; }
+  .stage-line.done { background: var(--done); }
+
+  .photo-thumb-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .photo-thumb {
+    width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
+    border: 1.5px solid var(--border); cursor: pointer;
+  }
+  .photo-thumb-more {
+    width: 36px; height: 36px; border-radius: 6px; background: #f1f5f9; color: var(--text-light);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    cursor: pointer; border: 1.5px solid var(--border);
+  }
+
   .doc-item {
     display: flex; justify-content: space-between; align-items: center;
     background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 8px;
@@ -1184,25 +1209,74 @@ function subChipClass(status, doneValue) {
 
 function renderVehicleCard(v) {
   const status = v.CurrentStatus || 'stock';
-  const financeChip = v.FinanceStatus ? `<span class="sub-chip ${subChipClass(v.FinanceStatus, 'approved')}">Finance: ${v.FinanceStatus}</span>` : '';
-  const insuranceChip = v.InsuranceStatus ? `<span class="sub-chip ${subChipClass(v.InsuranceStatus, 'done')}">Insurance: ${v.InsuranceStatus}</span>` : '';
-  const rtoChip = v.RTOStatus ? `<span class="sub-chip ${subChipClass(v.RTOStatus, 'done')}">RTO: ${v.RTOStatus}</span>` : '';
   const locationLine = v.CurrentLocation ? `<div class="vc-model">&#128205; ${v.CurrentLocation}</div>` : '';
-  const photoIcon = v.hasPhotos
-    ? `<span onclick="event.stopPropagation(); openPhotosModal('${v.VIN}')" style="font-size:16px; cursor:pointer;" title="View photos">&#128247;</span>`
-    : '';
+
+  // ---- 7-stage tracker ----
+  // Stages: Purchase (always done, vehicle exists) -> Booking -> Finance -> Insurance -> RTO -> Delivery
+  // Returned is a separate terminal state shown as a full-width banner instead of in the tracker,
+  // since it breaks out of the normal forward flow entirely.
+  const stages = [
+    { key: 'purchase', label: 'Purchase', icon: '1' },
+    { key: 'booking', label: 'Booking', icon: '2' },
+    { key: 'finance', label: 'Finance', icon: '3' },
+    { key: 'insurance', label: 'Insurance', icon: '4' },
+    { key: 'rto', label: 'RTO', icon: '5' },
+    { key: 'delivery', label: 'Delivered', icon: '6' }
+  ];
+
+  function stageState(key) {
+    if (status === 'returned') return key === 'purchase' ? 'done' : 'pending';
+    if (key === 'purchase') return 'done'; // vehicle exists in system = purchase always complete
+    if (key === 'booking') return status === 'stock' ? 'pending' : 'done';
+    if (status === 'stock') return 'pending'; // nothing past booking can be reached yet
+    if (key === 'finance') {
+      if (v.FinanceStatus === 'approved' || v.FinanceStatus === 'not_applicable') return 'done';
+      if (v.FinanceStatus === 'rejected') return 'rejected';
+      return status === 'booking' ? 'pending' : 'current';
+    }
+    if (key === 'insurance') return v.InsuranceStatus === 'done' ? 'done' : (status === 'booking' ? 'pending' : 'current');
+    if (key === 'rto') return v.RTOStatus === 'done' ? 'done' : (status === 'booking' ? 'pending' : 'current');
+    if (key === 'delivery') return status === 'delivered' ? 'done' : 'pending';
+    return 'pending';
+  }
+
+  const trackerHtml = status === 'returned'
+    ? `<div style="margin-top:8px; padding:6px 10px; background:#fee2e2; color:#991b1b; border-radius:6px; font-size:11px; font-weight:700; text-align:center;">RETURNED</div>`
+    : `<div class="stage-tracker">${stages.map((s, idx) => {
+        const state = stageState(s.key);
+        const dotClass = state === 'done' ? 'done' : state === 'current' ? 'current' : state === 'rejected' ? 'rejected' : '';
+        const dotContent = state === 'done' ? '&#10003;' : state === 'rejected' ? '&#10007;' : s.icon;
+        const lineClass = (idx < stages.length - 1 && (state === 'done')) ? 'done' : '';
+        return `
+          <div class="stage-step">
+            <div class="stage-dot ${dotClass}">${dotContent}</div>
+            <div class="stage-label">${s.label}</div>
+          </div>
+          ${idx < stages.length - 1 ? `<div class="stage-line ${lineClass}"></div>` : ''}
+        `;
+      }).join('')}</div>`;
+
+  // ---- Photo thumbnails ----
+  let photoHtml = '';
+  if (v.hasPhotos && v.photoThumbs && v.photoThumbs.length > 0) {
+    const thumbs = v.photoThumbs.map(url => `<img src="${url}" class="photo-thumb" onclick="event.stopPropagation(); openPhotosModal('${v.VIN}')">`).join('');
+    const moreCount = v.photoCount - v.photoThumbs.length;
+    const moreBadge = moreCount > 0 ? `<div class="photo-thumb-more" onclick="event.stopPropagation(); openPhotosModal('${v.VIN}')">+${moreCount}</div>` : '';
+    photoHtml = `<div class="photo-thumb-row">${thumbs}${moreBadge}</div>`;
+  }
 
   return `
     <div class="vehicle-card status-${status}" onclick="openVehicleDetail('${v.VIN}')">
       <div class="vc-top">
         <div>
-          <div class="vc-vin">${v.VIN} ${photoIcon}</div>
+          <div class="vc-vin">${v.VIN}</div>
           <div class="vc-model">${v.Model || ''} ${v.Variant || ''} &middot; ${v.Color || ''}</div>
           ${locationLine}
         </div>
         <span class="vc-status-badge ${status}">${status}</span>
       </div>
-      ${(financeChip || insuranceChip || rtoChip) ? `<div class="vc-sub-chips">${financeChip}${insuranceChip}${rtoChip}</div>` : ''}
+      ${trackerHtml}
+      ${photoHtml}
     </div>
   `;
 }
