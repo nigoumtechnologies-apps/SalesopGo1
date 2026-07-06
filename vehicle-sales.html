@@ -298,18 +298,30 @@
   <!-- ===== INSURANCE PENDING SCREEN ===== -->
   <div id="insurancePendingScreen" class="screen">
     <div class="section-title" style="margin-top:0;">Insurance Pending</div>
+    <div class="action-row" id="insurancePendingExportRow" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="exportPendingList('insurance', 'excel')">Export Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportPendingList('insurance', 'pdf')">Export PDF</button>
+    </div>
     <div id="insurancePendingContainer"><div class="loading-spinner">Loading...</div></div>
   </div>
 
   <!-- ===== RTO PENDING SCREEN ===== -->
   <div id="rtoPendingScreen" class="screen">
     <div class="section-title" style="margin-top:0;">RTO Pending</div>
+    <div class="action-row" id="rtoPendingExportRow" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="exportPendingList('rto', 'excel')">Export Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportPendingList('rto', 'pdf')">Export PDF</button>
+    </div>
     <div id="rtoPendingContainer"><div class="loading-spinner">Loading...</div></div>
   </div>
 
   <!-- ===== FINANCE PENDING SCREEN (reuses same pattern, filters Finance log) ===== -->
   <div id="financePendingScreen" class="screen">
     <div class="section-title" style="margin-top:0;">Finance Pending</div>
+    <div class="action-row" id="financePendingExportRow" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="exportPendingList('finance', 'excel')">Export Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportPendingList('finance', 'pdf')">Export PDF</button>
+    </div>
     <div id="financePendingContainer"><div class="loading-spinner">Loading...</div></div>
   </div>
 
@@ -333,6 +345,10 @@
     <div class="action-row">
       <button class="btn btn-secondary" onclick="runReport('summary')">Summary</button>
       <button class="btn btn-primary" onclick="runReport('list')">List</button>
+    </div>
+    <div class="action-row" id="reportExportRow" style="display:none; margin-top:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="exportReportResults('excel')">Export Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportReportResults('pdf')">Export PDF</button>
     </div>
     <div id="reportResultContainer" style="margin-top:14px;"></div>
   </div>
@@ -382,6 +398,10 @@
 
   <!-- ===== STOCK LIST SCREEN ===== -->
   <div id="stockScreen" class="screen">
+    <div class="action-row" id="stockExportRow" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="exportStockList('excel')">Export Excel</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportStockList('pdf')">Export PDF</button>
+    </div>
     <div id="extraFilterBanner" style="display:none; background:#eef2ff; border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:13px; display:flex; justify-content:space-between; align-items:center;">
       <span id="extraFilterLabel"></span>
       <button onclick="clearExtraFilter()" style="background:none; border:none; color:var(--primary); font-weight:700; font-size:12px;">Clear &times;</button>
@@ -682,6 +702,8 @@ let currentUser = null;   // { username, fullName, role, permissions }
 let vehicleCache = [];    // last loaded stock list
 let listsCache = {};      // dropdown lists from getLists
 let financeStaffCache = []; // list of {username, fullName} for Finance-role users
+let lastReportResult = null; // { viewType, data } - cached for Reports export
+let lastPendingListCache = { insurance: [], rto: [], finance: [] }; // cached for Pending list export
 let currentFilter = 'all';
 let extraFilter = null; // { type: 'model'|'location', value: '...' } - set when drilling down from Dashboard
 let vehicleEntryCount = 0;
@@ -805,6 +827,12 @@ function applyRolePermissions() {
   document.getElementById('quickLinkReports').style.display = perms.indexOf('reports') !== -1 ? 'block' : 'none';
   document.getElementById('quickLinkBulkUpload').style.display = currentUser.role === 'Admin' ? 'block' : 'none';
   document.getElementById('quickLinkAudit').style.display = perms.indexOf('audit') !== -1 ? 'block' : 'none';
+
+  const isAdmin = currentUser.role === 'Admin';
+  ['stockExportRow', 'insurancePendingExportRow', 'rtoPendingExportRow', 'financePendingExportRow', 'reportExportRow'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isAdmin ? 'flex' : 'none';
+  });
 }
 
 function can(action) {
@@ -939,6 +967,7 @@ async function loadInsurancePending() {
   const container = document.getElementById('insurancePendingContainer');
   container.innerHTML = '<div class="loading-spinner">Loading...</div>';
   const res = await apiCall('getInsurancePending');
+  if (res.success) lastPendingListCache.insurance = res.vehicles || [];
   renderPendingList(container, res, 'InsuranceStatus');
 }
 
@@ -946,6 +975,7 @@ async function loadRTOPending() {
   const container = document.getElementById('rtoPendingContainer');
   container.innerHTML = '<div class="loading-spinner">Loading...</div>';
   const res = await apiCall('getRTOPending');
+  if (res.success) lastPendingListCache.rto = res.vehicles || [];
   renderPendingList(container, res, 'RTOStatus');
 }
 
@@ -963,6 +993,7 @@ async function loadFinancePending() {
     v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned' &&
     v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable'
   );
+  lastPendingListCache.finance = pending;
   renderPendingListFromVehicles(container, pending, 'FinanceStatus');
 }
 
@@ -1031,6 +1062,8 @@ async function runReport(viewType) {
     container.innerHTML = '<div class="status-msg error" style="display:block;">' + res.error + '</div>';
     return;
   }
+
+  lastReportResult = { viewType: viewType, data: res };
 
   if (viewType === 'summary') {
     const summary = res.summary || {};
@@ -2071,6 +2104,94 @@ async function searchVinHistory() {
     <div class="section-title">Full Timeline (${timeline.length} entries)</div>
     ${timelineHtml}
   `;
+}
+
+// ==================== ADMIN EXPORT (Excel / PDF) ====================
+async function callExportAndDownload(title, columns, rows, format) {
+  if (rows.length === 0) {
+    alert('No data to export.');
+    return;
+  }
+  const res = await apiCall('exportData', { format: format, title: title, columns: columns, rows: rows });
+  if (!res.success) {
+    alert('Export failed: ' + res.error);
+    return;
+  }
+  downloadBase64File(res.base64Data, res.fileName, res.mimeType);
+}
+
+function downloadBase64File(base64Data, fileName, mimeType) {
+  const byteCharacters = atob(base64Data);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportStockList(format) {
+  // Exports whatever is currently filtered/searched on screen, not the full unfiltered cache -
+  // matches what the Admin is actually looking at.
+  const search = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+  let list = vehicleCache;
+  if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
+    list = list.filter(v => v.CurrentStatus === currentFilter);
+  } else if (currentFilter === 'finance') {
+    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+      && v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable');
+  } else if (currentFilter === 'insurance') {
+    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+      && v.InsuranceStatus !== 'done');
+  } else if (currentFilter === 'rto') {
+    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+      && v.RTOStatus !== 'done');
+  }
+  if (extraFilter) {
+    if (extraFilter.type === 'model') list = list.filter(v => (v.Model || '(No Model)') === extraFilter.value);
+    else if (extraFilter.type === 'location') list = list.filter(v => (v.CurrentLocation || '(No Location Set)') === extraFilter.value);
+  }
+  if (search) {
+    list = list.filter(v => (v.VIN || '').toLowerCase().includes(search) || (v.Model || '').toLowerCase().includes(search) || (v.CustomerName || '').toLowerCase().includes(search));
+  }
+
+  const columns = ['VIN', 'Model', 'Variant', 'Color', 'Status', 'Location', 'Customer', 'Finance', 'Insurance', 'RTO'];
+  const rows = list.map(v => [v.VIN, v.Model || '', v.Variant || '', v.Color || '', v.CurrentStatus || '', v.CurrentLocation || '', v.CustomerName || '', v.FinanceStatus || '', v.InsuranceStatus || '', v.RTOStatus || '']);
+  callExportAndDownload('Vehicle Stock List', columns, rows, format);
+}
+
+function exportPendingList(type, format) {
+  const list = lastPendingListCache[type] || [];
+  const columns = ['VIN', 'Model', 'Variant', 'Status', 'Customer', 'Pending Detail'];
+  const statusField = type === 'insurance' ? 'InsuranceStatus' : type === 'rto' ? 'RTOStatus' : 'FinanceStatus';
+  const rows = list.map(v => [v.VIN, v.Model || '', v.Variant || '', v.CurrentStatus || '', v.CustomerName || '', v.latestSubStatus || v[statusField] || 'not started']);
+  callExportAndDownload(type.charAt(0).toUpperCase() + type.slice(1) + ' Pending List', columns, rows, format);
+}
+
+function exportReportResults(format) {
+  if (!lastReportResult) {
+    alert('Please run a report first.');
+    return;
+  }
+  if (lastReportResult.viewType === 'summary') {
+    const summary = lastReportResult.data.summary || {};
+    const columns = ['Transaction Type', 'Count'];
+    const rows = Object.keys(summary).map(k => [k, summary[k]]);
+    callExportAndDownload('Transaction Summary Report', columns, rows, format);
+  } else {
+    const rowsData = lastReportResult.data.rows || [];
+    const columns = ['RefNo', 'VIN', 'Type', 'Details', 'Logged By', 'Timestamp'];
+    const rows = rowsData.map(r => [r.RefNo, r.VIN, r.LogType, r.Details, r.LoggedBy, formatTimestamp(r.Timestamp)]);
+    callExportAndDownload('Transaction List Report', columns, rows, format);
+  }
 }
 
 // ==================== SCREEN SHARE (JPG + WhatsApp) ====================
