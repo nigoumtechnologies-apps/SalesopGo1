@@ -432,7 +432,7 @@
       <button onclick="clearExtraFilter()" style="background:none; border:none; color:var(--primary); font-weight:700; font-size:12px;">Clear &times;</button>
     </div>
     <div class="search-bar">
-      <input type="text" id="searchInput" placeholder="Search VIN, Model, Customer..." oninput="renderStockList()">
+      <input type="text" id="searchInput" placeholder="Search any stage: VIN, Model, Customer, Booking No..." oninput="renderStockList()">
     </div>
     <div class="filter-chips" id="filterChips">
       <button class="filter-chip active" data-status="all" onclick="setFilter('all')">All</button>
@@ -1161,38 +1161,53 @@ function renderStockList() {
     banner.style.display = 'none';
   }
 
-  if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
-    list = list.filter(v => v.CurrentStatus === currentFilter);
-  } else if (currentFilter === 'finance') {
-    // Pending Finance = booked but not yet approved/not_applicable (mirrors delivery gate logic)
-    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
-      && v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable');
-  } else if (currentFilter === 'insurance') {
-    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
-      && v.InsuranceStatus !== 'done');
-  } else if (currentFilter === 'rto') {
-    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
-      && v.RTOStatus !== 'done');
-  }
-  // currentFilter === 'all' -> no filtering
-
-  if (extraFilter) {
-    if (extraFilter.type === 'model') {
-      list = list.filter(v => (v.Model || '(No Model)') === extraFilter.value);
-    } else if (extraFilter.type === 'location') {
-      list = list.filter(v => (v.CurrentLocation || '(No Location Set)') === extraFilter.value);
-    }
-  }
-
+  // When there's an active search term, search across ALL vehicles regardless of the
+  // selected stage chip - a search is a direct lookup ("find this VIN/customer"), not
+  // meant to be scoped by whatever filter happened to be active. Stage chips and Model/
+  // Location drill-down only apply when there's no search term.
   if (search) {
     list = list.filter(v =>
       (v.VIN || '').toLowerCase().includes(search) ||
       (v.Model || '').toLowerCase().includes(search) ||
-      (v.CustomerName || '').toLowerCase().includes(search)
+      (v.Variant || '').toLowerCase().includes(search) ||
+      (v.CustomerName || '').toLowerCase().includes(search) ||
+      (v.CustomerPhone || '').toLowerCase().includes(search) ||
+      (v.ManualBookingNumber || '').toLowerCase().includes(search) ||
+      (v.CurrentLocation || '').toLowerCase().includes(search)
     );
+  } else {
+    if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
+      list = list.filter(v => v.CurrentStatus === currentFilter);
+    } else if (currentFilter === 'finance') {
+      // Pending Finance = booked but not yet approved/not_applicable (mirrors delivery gate logic)
+      list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+        && v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable');
+    } else if (currentFilter === 'insurance') {
+      list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+        && v.InsuranceStatus !== 'done');
+    } else if (currentFilter === 'rto') {
+      list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+        && v.RTOStatus !== 'done');
+    }
+    // currentFilter === 'all' -> no filtering
+
+    if (extraFilter) {
+      if (extraFilter.type === 'model') {
+        list = list.filter(v => (v.Model || '(No Model)') === extraFilter.value);
+      } else if (extraFilter.type === 'location') {
+        list = list.filter(v => (v.CurrentLocation || '(No Location Set)') === extraFilter.value);
+      }
+    }
   }
 
   const container = document.getElementById('stockListContainer');
+
+  // Visual cue that search is overriding the stage filter, without altering the actual
+  // currentFilter state - chips return to normal the moment the search box is cleared.
+  const chipsRow = document.getElementById('filterChips');
+  chipsRow.style.opacity = search ? '0.45' : '1';
+  chipsRow.style.pointerEvents = search ? 'none' : 'auto';
+
   if (list.length === 0) {
     container.innerHTML = '<div class="empty-state"><div class="icon">&#127960;</div>No vehicles found.</div>';
     return;
@@ -2248,27 +2263,38 @@ function downloadBase64File(base64Data, fileName, mimeType) {
 
 function exportStockList(format) {
   // Exports whatever is currently filtered/searched on screen, not the full unfiltered cache -
-  // matches what the Admin is actually looking at.
+  // matches what the Admin is actually looking at. Same search-overrides-filter logic as
+  // renderStockList, so exports always match what's visible.
   const search = (document.getElementById('searchInput').value || '').trim().toLowerCase();
   let list = vehicleCache;
-  if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
-    list = list.filter(v => v.CurrentStatus === currentFilter);
-  } else if (currentFilter === 'finance') {
-    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
-      && v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable');
-  } else if (currentFilter === 'insurance') {
-    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
-      && v.InsuranceStatus !== 'done');
-  } else if (currentFilter === 'rto') {
-    list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
-      && v.RTOStatus !== 'done');
-  }
-  if (extraFilter) {
-    if (extraFilter.type === 'model') list = list.filter(v => (v.Model || '(No Model)') === extraFilter.value);
-    else if (extraFilter.type === 'location') list = list.filter(v => (v.CurrentLocation || '(No Location Set)') === extraFilter.value);
-  }
+
   if (search) {
-    list = list.filter(v => (v.VIN || '').toLowerCase().includes(search) || (v.Model || '').toLowerCase().includes(search) || (v.CustomerName || '').toLowerCase().includes(search));
+    list = list.filter(v =>
+      (v.VIN || '').toLowerCase().includes(search) ||
+      (v.Model || '').toLowerCase().includes(search) ||
+      (v.Variant || '').toLowerCase().includes(search) ||
+      (v.CustomerName || '').toLowerCase().includes(search) ||
+      (v.CustomerPhone || '').toLowerCase().includes(search) ||
+      (v.ManualBookingNumber || '').toLowerCase().includes(search) ||
+      (v.CurrentLocation || '').toLowerCase().includes(search)
+    );
+  } else {
+    if (currentFilter === 'stock' || currentFilter === 'booking' || currentFilter === 'delivered' || currentFilter === 'returned') {
+      list = list.filter(v => v.CurrentStatus === currentFilter);
+    } else if (currentFilter === 'finance') {
+      list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+        && v.FinanceStatus !== 'approved' && v.FinanceStatus !== 'not_applicable');
+    } else if (currentFilter === 'insurance') {
+      list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+        && v.InsuranceStatus !== 'done');
+    } else if (currentFilter === 'rto') {
+      list = list.filter(v => v.CurrentStatus !== 'stock' && v.CurrentStatus !== 'delivered' && v.CurrentStatus !== 'returned'
+        && v.RTOStatus !== 'done');
+    }
+    if (extraFilter) {
+      if (extraFilter.type === 'model') list = list.filter(v => (v.Model || '(No Model)') === extraFilter.value);
+      else if (extraFilter.type === 'location') list = list.filter(v => (v.CurrentLocation || '(No Location Set)') === extraFilter.value);
+    }
   }
 
   const columns = ['VIN', 'Model', 'Variant', 'Color', 'Status', 'Location', 'Customer', 'Finance', 'Insurance', 'RTO'];
