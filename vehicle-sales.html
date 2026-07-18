@@ -527,6 +527,7 @@
     <div class="form-group"><label>Customer Name</label><input type="text" id="bCustomerName" placeholder="Full name"></div>
     <div class="form-group"><label>Customer Phone</label><input type="tel" id="bCustomerPhone" placeholder="10-digit mobile"></div>
     <div class="form-group"><label>Booking Date</label><input type="date" id="bDate"></div>
+    <div class="form-group"><label>Manual Booking Number</label><input type="text" id="bManualBookingNumber" placeholder="e.g. BK-2026-0451"></div>
     <div class="form-group">
       <label>Assign Finance Staff (optional - leave blank for cash)</label>
       <select id="bFinanceStaff"><option value="">-- Cash / No Finance --</option></select>
@@ -1460,6 +1461,8 @@ function renderDetail(v, timeline) {
       <div class="detail-row"><span class="lbl">Purchase Invoice</span><span class="val">${v.PurchaseInvoiceNo || '-'}</span></div>
       <div class="detail-row"><span class="lbl">Current Location</span><span class="val">${v.CurrentLocation || '-'}</span></div>
       <div class="detail-row"><span class="lbl">Supplier</span><span class="val">${v.SupplierName || '-'}</span></div>
+      ${v.ManualBookingNumber ? `<div class="detail-row"><span class="lbl">Booking No.</span><span class="val">${v.ManualBookingNumber}</span></div>` : ''}
+      ${v.CustomerName ? `<div class="detail-row"><span class="lbl">Customer</span><span class="val">${v.CustomerName} (${v.CustomerPhone || ''})</span></div>` : ''}
     </div>
     ${actionsHtml ? `<div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">${actionsHtml}</div>` : ''}
     <div class="section-title">Timeline</div>
@@ -1482,6 +1485,7 @@ async function openBookingModal(vin) {
   document.getElementById('bCustomerName').value = '';
   document.getElementById('bCustomerPhone').value = '';
   document.getElementById('bDate').value = todayStr();
+  document.getElementById('bManualBookingNumber').value = '';
   document.getElementById('bookingStatusMsg').style.display = 'none';
 
   const staffSelect = document.getElementById('bFinanceStaff');
@@ -1509,10 +1513,18 @@ async function submitBooking() {
   const name = document.getElementById('bCustomerName').value.trim();
   const phone = document.getElementById('bCustomerPhone').value.trim();
   const date = document.getElementById('bDate').value;
+  const manualBookingNumber = document.getElementById('bManualBookingNumber').value.trim();
   const financeStaff = document.getElementById('bFinanceStaff').value;
   if (!name || !phone || !date) { showMsg(msgEl, 'All fields are required.', 'error'); return; }
 
-  const res = await apiCall('addBooking', { vin: vin, customerName: name, customerPhone: phone, bookingDate: date, assignedFinanceStaff: financeStaff });
+  const res = await apiCall('addBooking', {
+    vin: vin,
+    customerName: name,
+    customerPhone: phone,
+    bookingDate: date,
+    manualBookingNumber: manualBookingNumber,
+    assignedFinanceStaff: financeStaff
+  });
   if (res.success) {
     showMsg(msgEl, res.message, 'success');
     setTimeout(() => { closeModal('bookingModal'); loadStockList(); loadDashboard(); }, 900);
